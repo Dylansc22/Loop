@@ -10,7 +10,7 @@ import CoreGraphics
 import Foundation
 
 struct GridConfiguration: Codable, Hashable {
-    static let minDimension = 2
+    static let minDimension = 1
     static let maxDimension = 10
 
     var isEnabled: Bool

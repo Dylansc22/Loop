@@ -144,6 +144,30 @@ extension Defaults.Keys {
     /// Reset with `defaults delete com.MrKai77.Loop triggerKeyTimeout`
     static let triggerKeyTimeout = Key<Double>("triggerKeyTimeout", default: 0, iCloud: true)
 
+    /// Grid scroll resize sensitivity multiplier used in grid mode.
+    /// Higher values increase sensitivity (smaller travel needed), lower values decrease sensitivity.
+    /// Adjust with `defaults write com.MrKai77.Loop gridScrollResizeSensitivity -float x`
+    /// Reset with `defaults delete com.MrKai77.Loop gridScrollResizeSensitivity`
+    static let gridScrollResizeSensitivity = Key<Double>("gridScrollResizeSensitivity", default: 1, iCloud: true)
+
+    /// Legacy key for grid mode scroll inertia behavior.
+    /// Grid resize now uses fixed origin detents and ignores momentum phase for movement parity.
+    /// Adjust with `defaults write com.MrKai77.Loop gridScrollInertiaEnabled -bool x`
+    /// Reset with `defaults delete com.MrKai77.Loop gridScrollInertiaEnabled`
+    static let gridScrollInertiaEnabled = Key<Bool>("gridScrollInertiaEnabled", default: true, iCloud: true)
+
+    /// Legacy key retained for backward compatibility.
+    /// Grid resize no longer uses acceleration shaping in detent mode.
+    /// Adjust with `defaults write com.MrKai77.Loop gridScrollAcceleration -float x`
+    /// Reset with `defaults delete com.MrKai77.Loop gridScrollAcceleration`
+    static let gridScrollAcceleration = Key<Double>("gridScrollAcceleration", default: 0.15, iCloud: true)
+
+    /// Legacy key retained for backward compatibility.
+    /// Grid resize no longer uses momentum sensitivity in detent mode.
+    /// Adjust with `defaults write com.MrKai77.Loop gridScrollMomentumSensitivity -float x`
+    /// Reset with `defaults delete com.MrKai77.Loop gridScrollMomentumSensitivity`
+    static let gridScrollMomentumSensitivity = Key<Double>("gridScrollMomentumSensitivity", default: 0.35, iCloud: true)
+
     /// Migrator
     static let lastMigratorURL = Key<URL?>("lastMigratorURL", default: nil)
 

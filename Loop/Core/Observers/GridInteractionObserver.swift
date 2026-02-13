@@ -10,6 +10,11 @@ import Scribe
 
 @Loggable
 final class GridInteractionObserver {
+    // Keep two-finger grid resize metrics aligned with single-finger movement thresholds.
+    private static let axisLockDistancePx: Double = 4
+    private static let activationDistancePx: Double = 4
+    private static let stepDistancePx: Double = 110
+
     struct SelectionUpdate {
         let configuration: GridConfiguration
         let cells: Set<GridCell>
@@ -21,6 +26,8 @@ final class GridInteractionObserver {
     private struct SelectionState: Equatable {
         let cells: Set<GridCell>
         let screenDisplayID: CGDirectDisplayID?
+        let rows: Int
+        let columns: Int
         let isDragging: Bool
     }
 
@@ -34,8 +41,10 @@ final class GridInteractionObserver {
     // Event monitors
     private var mouseMovementMonitor: PassiveEventMonitor?
     private var leftClickMonitor: ActiveEventMonitor?
+    private var scrollWheelMonitor: ActiveEventMonitor?
 
     // State tracking
+    private var activeConfiguration: GridConfiguration = .fromDefaults()
     private var currentScreen: NSScreen?
     private var currentHoveredCell: GridCell?
     private var selectedCells: Set<GridCell> = []
@@ -47,6 +56,13 @@ final class GridInteractionObserver {
     private var dragSelection: GridSelection?
     private var dragStartPoint: CGPoint = .zero
     private var dragStartScreen: NSScreen?
+    private var activeScrollAxis: ScrollAxis?
+    private var pendingAxisLockVerticalSignedPx: Double = 0
+    private var pendingAxisLockHorizontalSignedPx: Double = 0
+    private var pendingAxisLockVerticalTravelPx: Double = 0
+    private var pendingAxisLockHorizontalTravelPx: Double = 0
+    private var lockedAxisSignedTravelPx: Double = 0
+    private var appliedDetentIndex: Int = 0
 
     private var previousSelectionState: SelectionState?
 
@@ -66,6 +82,7 @@ final class GridInteractionObserver {
 
     func start(initialSelection: Set<GridCell> = [], initialScreen: NSScreen? = nil) {
         stop()
+        activeConfiguration = configurationProvider()
 
         let mouseMovementMonitor = PassiveEventMonitor(
             events: [.mouseMoved],
@@ -85,6 +102,15 @@ final class GridInteractionObserver {
         leftClickMonitor.start()
         self.leftClickMonitor = leftClickMonitor
 
+        let scrollWheelMonitor = ActiveEventMonitor(
+            events: [.scrollWheel],
+            callback: { [weak self] event in
+                self?.handleScrollWheel(event) ?? .forward
+            }
+        )
+        scrollWheelMonitor.start()
+        self.scrollWheelMonitor = scrollWheelMonitor
+
         let pointerLocation = CGEvent.mouseLocation ?? NSEvent.mouseLocation
 
         if initialSelection.isEmpty {
@@ -95,7 +121,7 @@ final class GridInteractionObserver {
             currentScreen = initialScreen
             selectedCells = initialSelection
 
-            let config = configurationProvider()
+            let config = activeConfiguration
             let pointerCell = initialScreen
                 .flatMap {
                     config.cellAt(
@@ -116,6 +142,10 @@ final class GridInteractionObserver {
         leftClickMonitor?.stop()
         leftClickMonitor = nil
 
+        scrollWheelMonitor?.stop()
+        scrollWheelMonitor = nil
+
+        activeConfiguration = configurationProvider()
         currentScreen = nil
         currentHoveredCell = nil
         selectedCells = []
@@ -127,6 +157,7 @@ final class GridInteractionObserver {
         dragSelection = nil
         dragStartPoint = .zero
         dragStartScreen = nil
+        resetScrollGestureState()
 
         previousSelectionState = nil
 
@@ -158,10 +189,278 @@ final class GridInteractionObserver {
         return .ignore
     }
 
+    private func handleScrollWheel(_ event: CGEvent) -> ActiveEventMonitor.EventHandling {
+        guard checkIfLoopOpen() else {
+            return .forward
+        }
+
+        guard !isDragging else {
+            return .ignore
+        }
+
+        // Two-finger trackpad scrolling emits continuous events.
+        guard event.getIntegerValueField(.scrollWheelEventIsContinuous) != 0 else {
+            return .ignore
+        }
+
+        let scrollPhase = event.getIntegerValueField(.scrollWheelEventScrollPhase)
+        if scrollPhase == Int64(CGScrollPhase.began.rawValue) {
+            resetScrollGestureState()
+        }
+        if scrollPhase == Int64(CGScrollPhase.ended.rawValue)
+            || scrollPhase == Int64(CGScrollPhase.cancelled.rawValue) {
+            resetScrollGestureState()
+            return .ignore
+        }
+
+        // Ignore inertia/momentum to mirror direct single-finger movement feel.
+        let momentumPhase = event.getIntegerValueField(.scrollWheelEventMomentumPhase)
+        if momentumPhase != 0 {
+            return .ignore
+        }
+
+        let verticalPointDelta = event.getDoubleValueField(.scrollWheelEventPointDeltaAxis1)
+        let horizontalPointDelta = event.getDoubleValueField(.scrollWheelEventPointDeltaAxis2)
+        let verticalLineDelta = event.getDoubleValueField(.scrollWheelEventDeltaAxis1)
+        let horizontalLineDelta = event.getDoubleValueField(.scrollWheelEventDeltaAxis2)
+
+        let verticalDelta = verticalPointDelta != 0 ? verticalPointDelta : verticalLineDelta
+        let horizontalDelta = horizontalPointDelta != 0 ? horizontalPointDelta : horizontalLineDelta
+
+        let verticalMagnitude = abs(verticalDelta)
+        let horizontalMagnitude = abs(horizontalDelta)
+        guard max(verticalMagnitude, horizontalMagnitude) > 0 else {
+            return .ignore
+        }
+
+        let lockedAxis: ScrollAxis
+        if activeScrollAxis == nil {
+            pendingAxisLockVerticalSignedPx += verticalDelta
+            pendingAxisLockHorizontalSignedPx += horizontalDelta
+            pendingAxisLockVerticalTravelPx += verticalMagnitude
+            pendingAxisLockHorizontalTravelPx += horizontalMagnitude
+
+            guard let resolvedAxis = lockScrollAxisIfNeeded(
+                verticalTravel: pendingAxisLockVerticalTravelPx,
+                horizontalTravel: pendingAxisLockHorizontalTravelPx
+            ) else {
+                return .ignore
+            }
+            lockedAxis = resolvedAxis
+
+            if lockedAxis == .vertical {
+                lockedAxisSignedTravelPx = pendingAxisLockVerticalSignedPx
+            } else {
+                lockedAxisSignedTravelPx = pendingAxisLockHorizontalSignedPx
+            }
+            pendingAxisLockVerticalSignedPx = 0
+            pendingAxisLockHorizontalSignedPx = 0
+            pendingAxisLockVerticalTravelPx = 0
+            pendingAxisLockHorizontalTravelPx = 0
+        } else {
+            guard let resolvedAxis = activeScrollAxis else {
+                return .ignore
+            }
+            lockedAxis = resolvedAxis
+            if lockedAxis == .vertical {
+                lockedAxisSignedTravelPx += verticalDelta
+            } else {
+                lockedAxisSignedTravelPx += horizontalDelta
+            }
+        }
+
+        applyDetentSteps(for: lockedAxis)
+
+        return .ignore
+    }
+
+    private enum ScrollAxis {
+        case vertical
+        case horizontal
+    }
+
+    private func resetScrollGestureState() {
+        activeScrollAxis = nil
+        pendingAxisLockVerticalSignedPx = 0
+        pendingAxisLockHorizontalSignedPx = 0
+        pendingAxisLockVerticalTravelPx = 0
+        pendingAxisLockHorizontalTravelPx = 0
+        lockedAxisSignedTravelPx = 0
+        appliedDetentIndex = 0
+    }
+
+    private func lockScrollAxisIfNeeded(
+        verticalTravel: Double,
+        horizontalTravel: Double
+    ) -> ScrollAxis? {
+        if let activeScrollAxis {
+            return activeScrollAxis
+        }
+
+        if verticalTravel >= Self.axisLockDistancePx,
+           verticalTravel > horizontalTravel {
+            activeScrollAxis = .vertical
+            return .vertical
+        }
+
+        if horizontalTravel >= Self.axisLockDistancePx,
+           horizontalTravel > verticalTravel {
+            activeScrollAxis = .horizontal
+            return .horizontal
+        }
+
+        return nil
+    }
+
+    private func detentIndex(for signedTravel: Double) -> Int {
+        let travelMagnitude = abs(signedTravel)
+        guard travelMagnitude > Self.activationDistancePx else {
+            return 0
+        }
+
+        let additionalSteps = Int(((travelMagnitude - Self.activationDistancePx) / Self.stepDistancePx).rounded(.down))
+        let stepMagnitude = 1 + additionalSteps
+        return signedTravel > 0 ? stepMagnitude : -stepMagnitude
+    }
+
+    private func applyDetentSteps(for axis: ScrollAxis) {
+        let targetDetentIndex = detentIndex(for: lockedAxisSignedTravelPx)
+        var remaining = targetDetentIndex - appliedDetentIndex
+
+        while remaining != 0 {
+            let direction = remaining > 0 ? 1 : -1
+
+            let resizeApplied: Bool
+            if axis == .vertical {
+                let rowDelta = direction < 0 ? 1 : -1 // down adds a bottom row, up removes bottom row
+                resizeApplied = applyFootprintResizeStep(rowDelta: rowDelta, columnDelta: 0)
+            } else {
+                let columnDelta = direction < 0 ? 1 : -1 // right adds a right column, left removes right column
+                resizeApplied = applyFootprintResizeStep(rowDelta: 0, columnDelta: columnDelta)
+            }
+
+            guard resizeApplied else {
+                break
+            }
+
+            appliedDetentIndex += direction
+            remaining -= direction
+        }
+    }
+
+    private func applyFootprintResizeStep(rowDelta: Int, columnDelta: Int) -> Bool {
+        guard rowDelta != 0 || columnDelta != 0 else {
+            return false
+        }
+
+        let config = activeConfiguration
+        var workingSelection = selectedCells
+        if workingSelection.isEmpty {
+            if let hoveredCell = currentHoveredCell {
+                workingSelection = [hoveredCell]
+            } else if let resolved = resolvePointerCellAndScreen() {
+                currentScreen = resolved.screen
+                currentHoveredCell = resolved.cell
+                workingSelection = [resolved.cell]
+            } else {
+                return false
+            }
+        }
+
+        guard let bounds = selectionBounds(for: workingSelection) else {
+            return false
+        }
+
+        var updatedSelection = workingSelection
+
+        if rowDelta > 0 {
+            // Grow downward only.
+            guard bounds.maxRow < config.rows - 1 else {
+                return false
+            }
+            for column in bounds.minColumn...bounds.maxColumn {
+                updatedSelection.insert(GridCell(row: bounds.maxRow + 1, column: column))
+            }
+        } else if rowDelta < 0 {
+            // Shrink from bottom only.
+            guard bounds.maxRow > bounds.minRow else {
+                return false
+            }
+            for column in bounds.minColumn...bounds.maxColumn {
+                updatedSelection.remove(GridCell(row: bounds.maxRow, column: column))
+            }
+        }
+
+        if columnDelta > 0 {
+            // Grow to the right only.
+            guard bounds.maxColumn < config.columns - 1 else {
+                return false
+            }
+            for row in bounds.minRow...bounds.maxRow {
+                updatedSelection.insert(GridCell(row: row, column: bounds.maxColumn + 1))
+            }
+        } else if columnDelta < 0 {
+            // Shrink from the right only.
+            guard bounds.maxColumn > bounds.minColumn else {
+                return false
+            }
+            for row in bounds.minRow...bounds.maxRow {
+                updatedSelection.remove(GridCell(row: row, column: bounds.maxColumn))
+            }
+        }
+
+        guard updatedSelection != selectedCells else {
+            return false
+        }
+
+        selectedCells = updatedSelection
+
+        let pointerCell = currentHoveredCell ?? resolvePointerCellAndScreen()?.cell
+        if let pointerCell {
+            currentHoveredCell = pointerCell
+        }
+        configureHoverFootprint(cells: updatedSelection, pointerCell: pointerCell)
+
+        let resolvedScreen = currentScreen ?? resolvePointerCellAndScreen()?.screen
+        if let resolvedScreen {
+            currentScreen = resolvedScreen
+        }
+
+        dispatchSelectionUpdate(makeSelectionUpdate(configuration: config, screen: currentScreen))
+        return true
+    }
+
+    private func resolvePointerCellAndScreen() -> (screen: NSScreen, cell: GridCell)? {
+        let pointerLocation = CGEvent.mouseLocation ?? NSEvent.mouseLocation
+        guard let screen = currentScreen ?? screenContaining(point: pointerLocation) else {
+            return nil
+        }
+
+        let interactionBounds = interactionBoundsProvider(screen)
+        guard let cell = activeConfiguration.cellAt(point: pointerLocation, in: interactionBounds) else {
+            return nil
+        }
+
+        return (screen, cell)
+    }
+
+    private func selectionBounds(for cells: Set<GridCell>) -> (minRow: Int, maxRow: Int, minColumn: Int, maxColumn: Int)? {
+        guard
+            let minRow = cells.map(\.row).min(),
+            let maxRow = cells.map(\.row).max(),
+            let minColumn = cells.map(\.column).min(),
+            let maxColumn = cells.map(\.column).max()
+        else {
+            return nil
+        }
+
+        return (minRow, maxRow, minColumn, maxColumn)
+    }
+
     private func processPointer(at location: CGPoint) {
         guard !isDragging else { return }
 
-        let config = configurationProvider()
+        let config = activeConfiguration
         guard let screen = screenContaining(point: location) else {
             currentHoveredCell = nil
             selectedCells = []
@@ -197,7 +496,7 @@ final class GridInteractionObserver {
         shouldPreserveSelectionFootprint = false
         dragStartPoint = location
 
-        let config = configurationProvider()
+        let config = activeConfiguration
         guard let screen = screenContaining(point: location) else {
             dragStartScreen = nil
             dragSelection = GridSelection()
@@ -233,7 +532,7 @@ final class GridInteractionObserver {
             return
         }
 
-        let config = configurationProvider()
+        let config = activeConfiguration
         guard let screen = screenContaining(point: location) else {
             selectedCells = []
             dispatchSelectionUpdate(makeSelectionUpdate(configuration: config, screen: dragStartScreen))
@@ -307,7 +606,7 @@ final class GridInteractionObserver {
         dragSelection = nil
         dragStartScreen = nil
 
-        let config = configurationProvider()
+        let config = activeConfiguration
         let update = makeSelectionUpdate(configuration: config, screen: currentScreen)
         dispatchSelectionUpdate(update)
 
@@ -333,6 +632,8 @@ final class GridInteractionObserver {
         let state = SelectionState(
             cells: update.cells,
             screenDisplayID: update.screen?.displayID,
+            rows: update.configuration.rows,
+            columns: update.configuration.columns,
             isDragging: update.isDragging
         )
 
@@ -416,21 +717,30 @@ final class GridInteractionObserver {
             return nil
         }
 
-        let maxOriginRow = Swift.max(configuration.rows - span.rows, 0)
-        let maxOriginColumn = Swift.max(configuration.columns - span.columns, 0)
+        let clampedSpanRows = Swift.min(span.rows, configuration.rows)
+        let clampedSpanColumns = Swift.min(span.columns, configuration.columns)
+        guard clampedSpanRows > 0, clampedSpanColumns > 0 else {
+            return nil
+        }
+
+        let clampedAnchorRow = Swift.min(anchor.row, clampedSpanRows - 1)
+        let clampedAnchorColumn = Swift.min(anchor.column, clampedSpanColumns - 1)
+
+        let maxOriginRow = Swift.max(configuration.rows - clampedSpanRows, 0)
+        let maxOriginColumn = Swift.max(configuration.columns - clampedSpanColumns, 0)
 
         let originRow = Swift.min(
-            Swift.max(hoveredCell.row - anchor.row, 0),
+            Swift.max(hoveredCell.row - clampedAnchorRow, 0),
             maxOriginRow
         )
         let originColumn = Swift.min(
-            Swift.max(hoveredCell.column - anchor.column, 0),
+            Swift.max(hoveredCell.column - clampedAnchorColumn, 0),
             maxOriginColumn
         )
 
         var cells: Set<GridCell> = []
-        for row in originRow..<(originRow + span.rows) {
-            for column in originColumn..<(originColumn + span.columns) {
+        for row in originRow..<(originRow + clampedSpanRows) {
+            for column in originColumn..<(originColumn + clampedSpanColumns) {
                 cells.insert(GridCell(row: row, column: column))
             }
         }
