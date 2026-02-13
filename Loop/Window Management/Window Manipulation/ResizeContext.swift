@@ -32,6 +32,11 @@ final class ResizeContext {
     /// Used to open radial menu at the correct position.
     private(set) var initialMousePosition: CGPoint = .zero
 
+    /// Grid-mode state used by the grid overlay and interaction logic.
+    private(set) var gridConfiguration: GridConfiguration?
+    private(set) var selectedCells: Set<GridCell> = []
+    private(set) var isGridDragging: Bool = false
+
     private(set) var cachedTargetFrame: ComputedFrame = .zero
     private var needsRecompute: Bool = false
 
@@ -43,7 +48,10 @@ final class ResizeContext {
         padding: PaddingConfiguration? = nil,
         action: WindowAction = .init(.noSelection),
         parentAction: WindowAction? = nil,
-        initialMousePosition: CGPoint = .zero
+        initialMousePosition: CGPoint = .zero,
+        gridConfiguration: GridConfiguration? = nil,
+        selectedCells: Set<GridCell> = [],
+        isGridDragging: Bool = false
     ) {
         let frame = initialFrame ?? window?.frame ?? .zero
         let bounds = bounds ?? screen?.cgSafeScreenFrame ?? .zero
@@ -58,6 +66,9 @@ final class ResizeContext {
         self.action = action
         self.parentAction = parentAction
         self.initialMousePosition = initialMousePosition
+        self.gridConfiguration = gridConfiguration
+        self.selectedCells = selectedCells
+        self.isGridDragging = isGridDragging
         self.needsRecompute = !action.direction.isNoOp
     }
 
@@ -80,6 +91,12 @@ final class ResizeContext {
         action = newAction
         parentAction = newParentAction
         needsRecompute = true
+    }
+
+    func setGridState(configuration: GridConfiguration?, selectedCells: Set<GridCell>, isDragging: Bool) {
+        gridConfiguration = configuration
+        self.selectedCells = selectedCells
+        isGridDragging = isDragging
     }
 
     func getTargetFrame() -> ComputedFrame {

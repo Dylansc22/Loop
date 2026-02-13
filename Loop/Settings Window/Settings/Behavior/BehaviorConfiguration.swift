@@ -16,6 +16,7 @@ struct BehaviorConfigurationView: View {
     @Default(.startHidden) var startHidden
     @Default(.hideMenuBarIcon) var hideMenuBarIcon
     @Default(.animationConfiguration) var animationConfiguration
+    @Default(.gridModeEnabled) var gridModeEnabled
     @Default(.lockRadialMenuToCenter) var lockRadialMenuToCenter
     @Default(.windowSnapping) var windowSnapping
     @Default(.suppressMissionControlOnTopDrag) var suppressMissionControlOnTopDrag
@@ -37,6 +38,7 @@ struct BehaviorConfigurationView: View {
     var body: some View {
         Group {
             generalSection
+            gridSection
             windowSection
             cursorSection
             windowSnappingSection
@@ -48,7 +50,8 @@ struct BehaviorConfigurationView: View {
             value: [
                 resizeWindowUnderCursor,
                 windowSnapping,
-                respectStageManager
+                respectStageManager,
+                gridModeEnabled
             ]
         )
     }
@@ -61,7 +64,9 @@ struct BehaviorConfigurationView: View {
 
             LuminareToggle("Hide menu bar icon", isOn: $hideMenuBarIcon)
 
-            LuminareToggle("Center radial menu on screen", isOn: $lockRadialMenuToCenter)
+            if !gridModeEnabled {
+                LuminareToggle("Center radial menu on screen", isOn: $lockRadialMenuToCenter)
+            }
 
             LuminareSliderPicker(
                 "Animation speed",
@@ -72,6 +77,10 @@ struct BehaviorConfigurationView: View {
                     .monospaced()
             }
         }
+    }
+
+    private var gridSection: some View {
+        GridConfigurationView()
     }
 
     private var windowSection: some View {

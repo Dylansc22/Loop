@@ -1,0 +1,302 @@
+//
+//  GridInteractionObserver.swift
+//  Loop
+//
+//  Created by Codex on 2026-02-13.
+//
+
+import AppKit
+import Scribe
+
+@Loggable
+final class GridInteractionObserver {
+    struct SelectionUpdate {
+        let configuration: GridConfiguration
+        let cells: Set<GridCell>
+        let action: WindowAction
+        let screen: NSScreen?
+        let isDragging: Bool
+    }
+
+    private struct SelectionState: Equatable {
+        let cells: Set<GridCell>
+        let screenDisplayID: CGDirectDisplayID?
+        let isDragging: Bool
+    }
+
+    // Parameters
+    private let selectionChanged: (SelectionUpdate) -> ()
+    private let checkIfLoopOpen: () -> Bool
+    private let configurationProvider: () -> GridConfiguration
+
+    // Event monitors
+    private var mouseMovementMonitor: PassiveEventMonitor?
+    private var leftClickMonitor: ActiveEventMonitor?
+
+    // State tracking
+    private var currentScreen: NSScreen?
+    private var currentHoveredCell: GridCell?
+    private var selectedCells: Set<GridCell> = []
+
+    private var isDragging: Bool = false
+    private var dragSelection: GridSelection?
+    private var dragStartPoint: CGPoint = .zero
+    private var dragStartScreen: NSScreen?
+
+    private var previousSelectionState: SelectionState?
+
+    init(
+        selectionChanged: @escaping (SelectionUpdate) -> (),
+        checkIfLoopOpen: @escaping () -> Bool,
+        configurationProvider: @escaping () -> GridConfiguration
+    ) {
+        self.selectionChanged = selectionChanged
+        self.checkIfLoopOpen = checkIfLoopOpen
+        self.configurationProvider = configurationProvider
+    }
+
+    func start() {
+        stop()
+
+        let mouseMovementMonitor = PassiveEventMonitor(
+            events: [.mouseMoved],
+            callback: { [weak self] event in
+                self?.handleMouseMoved(event)
+            }
+        )
+        mouseMovementMonitor.start()
+        self.mouseMovementMonitor = mouseMovementMonitor
+
+        let leftClickMonitor = ActiveEventMonitor(
+            events: [.leftMouseDown, .leftMouseDragged, .leftMouseUp],
+            callback: { [weak self] event in
+                self?.handleLeftMouse(event) ?? .forward
+            }
+        )
+        leftClickMonitor.start()
+        self.leftClickMonitor = leftClickMonitor
+
+        // Publish initial state so the overlay can open with the current screen.
+        processPointer(at: NSEvent.mouseLocation)
+
+        log.info("Started")
+    }
+
+    func stop() {
+        mouseMovementMonitor?.stop()
+        mouseMovementMonitor = nil
+
+        leftClickMonitor?.stop()
+        leftClickMonitor = nil
+
+        currentScreen = nil
+        currentHoveredCell = nil
+        selectedCells = []
+
+        isDragging = false
+        dragSelection = nil
+        dragStartPoint = .zero
+        dragStartScreen = nil
+
+        previousSelectionState = nil
+
+        log.success("Stopped, all stored states cleared.")
+    }
+
+    private func handleMouseMoved(_ event: CGEvent) {
+        guard checkIfLoopOpen() else { return }
+        processPointer(at: event.location)
+    }
+
+    private func handleLeftMouse(_ event: CGEvent) -> ActiveEventMonitor.EventHandling {
+        guard checkIfLoopOpen() else {
+            return .forward
+        }
+
+        switch event.type {
+        case .leftMouseDown:
+            beginDrag(at: event.location)
+        case .leftMouseDragged:
+            updateDrag(at: event.location)
+        case .leftMouseUp:
+            endDrag(at: event.location)
+        default:
+            break
+        }
+
+        // Consume left click and drag events while Loop is active in grid mode to avoid click-through.
+        return .ignore
+    }
+
+    private func processPointer(at location: CGPoint) {
+        guard !isDragging else { return }
+
+        let config = configurationProvider()
+        guard let screen = screenContaining(point: location) else {
+            currentHoveredCell = nil
+            selectedCells = []
+            dispatchSelectionUpdate(configuration: config, screen: nil)
+            return
+        }
+
+        currentScreen = screen
+
+        let safeBounds = screen.cgSafeScreenFrame
+        let hoveredCell = config.cellAt(point: location, in: safeBounds)
+
+        currentHoveredCell = hoveredCell
+        selectedCells = hoveredCell.map { [$0] } ?? []
+
+        dispatchSelectionUpdate(configuration: config, screen: screen)
+    }
+
+    private func beginDrag(at location: CGPoint) {
+        isDragging = true
+        dragStartPoint = location
+
+        let config = configurationProvider()
+        guard let screen = screenContaining(point: location) else {
+            dragStartScreen = nil
+            dragSelection = GridSelection()
+            selectedCells = []
+            dispatchSelectionUpdate(configuration: config, screen: nil)
+            return
+        }
+
+        dragStartScreen = screen
+        currentScreen = screen
+
+        let safeBounds = screen.cgSafeScreenFrame
+        let startCell = config.cellAt(point: location, in: safeBounds)
+
+        var selection = GridSelection()
+        selection.startCell = startCell
+        selection.currentCells = startCell.map { [$0] } ?? []
+        selection.boundingFrame = selectionBoundingFrame(cells: selection.currentCells, configuration: config, in: safeBounds)
+
+        dragSelection = selection
+        selectedCells = selection.currentCells
+
+        dispatchSelectionUpdate(configuration: config, screen: screen)
+    }
+
+    private func updateDrag(at location: CGPoint) {
+        guard isDragging else {
+            beginDrag(at: location)
+            return
+        }
+
+        let config = configurationProvider()
+        guard let screen = screenContaining(point: location) else {
+            selectedCells = []
+            dispatchSelectionUpdate(configuration: config, screen: dragStartScreen)
+            return
+        }
+
+        if dragStartScreen?.isSameScreen(screen) != true {
+            dragStartScreen = screen
+            dragStartPoint = location
+
+            var resetSelection = GridSelection()
+            let safeBounds = screen.cgSafeScreenFrame
+            let startCell = config.cellAt(point: location, in: safeBounds)
+            resetSelection.startCell = startCell
+            resetSelection.currentCells = startCell.map { [$0] } ?? []
+            resetSelection.boundingFrame = selectionBoundingFrame(cells: resetSelection.currentCells, configuration: config, in: safeBounds)
+            dragSelection = resetSelection
+        }
+
+        currentScreen = dragStartScreen
+
+        guard let dragStartScreen else {
+            selectedCells = []
+            dispatchSelectionUpdate(configuration: config, screen: nil)
+            return
+        }
+
+        let safeBounds = dragStartScreen.cgSafeScreenFrame
+        let dragRect = CGRect(
+            x: min(dragStartPoint.x, location.x),
+            y: min(dragStartPoint.y, location.y),
+            width: abs(location.x - dragStartPoint.x),
+            height: abs(location.y - dragStartPoint.y)
+        )
+
+        let intersectingCells = Set(config.cellsIntersecting(rect: dragRect, in: safeBounds))
+        selectedCells = intersectingCells
+
+        if var dragSelection {
+            dragSelection.currentCells = intersectingCells
+            dragSelection.boundingFrame = selectionBoundingFrame(cells: intersectingCells, configuration: config, in: safeBounds)
+            self.dragSelection = dragSelection
+        }
+
+        dispatchSelectionUpdate(configuration: config, screen: dragStartScreen)
+    }
+
+    private func endDrag(at location: CGPoint) {
+        updateDrag(at: location)
+
+        isDragging = false
+        dragSelection = nil
+        dragStartScreen = nil
+
+        let config = configurationProvider()
+        dispatchSelectionUpdate(configuration: config, screen: currentScreen)
+    }
+
+    private func dispatchSelectionUpdate(configuration: GridConfiguration, screen: NSScreen?) {
+        let screenBounds = screen?.cgSafeScreenFrame ?? .zero
+        let action = GridWindowAction.createAction(from: selectedCells, config: configuration, screen: screenBounds)
+
+        let state = SelectionState(
+            cells: selectedCells,
+            screenDisplayID: screen?.displayID,
+            isDragging: isDragging
+        )
+
+        guard previousSelectionState != state else {
+            return
+        }
+
+        previousSelectionState = state
+
+        selectionChanged(
+            .init(
+                configuration: configuration,
+                cells: selectedCells,
+                action: action,
+                screen: screen,
+                isDragging: isDragging
+            )
+        )
+    }
+
+    private func selectionBoundingFrame(cells: Set<GridCell>, configuration: GridConfiguration, in screen: CGRect) -> CGRect {
+        guard let firstCell = cells.first else {
+            return .zero
+        }
+
+        var result = configuration.calculateCellFrame(
+            row: firstCell.row,
+            column: firstCell.column,
+            in: screen
+        )
+
+        for cell in cells.dropFirst() {
+            result = result.union(
+                configuration.calculateCellFrame(
+                    row: cell.row,
+                    column: cell.column,
+                    in: screen
+                )
+            )
+        }
+
+        return result
+    }
+
+    private func screenContaining(point: CGPoint) -> NSScreen? {
+        NSScreen.screens.first { $0.frame.contains(point) }
+    }
+}

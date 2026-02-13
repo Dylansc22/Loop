@@ -28,6 +28,7 @@ final class LoopManager {
     private(set) var isLoopActive: Bool = false
 
     private var lastLoopTime: Date = .now
+    private var isGridModeEnabled: Bool { Defaults[.gridModeEnabled] }
 
     private lazy var triggerKeyTimeoutTimer = TriggerKeyTimeoutTimer(
         closeCallback: { [weak self] forceClose in
@@ -86,6 +87,20 @@ final class LoopManager {
             self?.resizeContext.parentAction != nil
         },
         checkIfLoopOpen: { [weak self] in self?.isLoopActive ?? false }
+    )
+
+    private(set) lazy var gridInteractionObserver = GridInteractionObserver(
+        selectionChanged: { [weak self] update in
+            Task {
+                // If the mouse moved, that means that the keybind trigger should no longer passthrough special events such as the emoji key.
+                self?.keybindTrigger.canPassthroughNextSpecialEvent = false
+                await self?.handleGridSelectionUpdate(update)
+            }
+        },
+        checkIfLoopOpen: { [weak self] in self?.isLoopActive ?? false },
+        configurationProvider: {
+            GridConfiguration.fromDefaults()
+        }
     )
 
     func start() {
@@ -157,10 +172,15 @@ extension LoopManager {
         resizeContext = ResizeContext(
             window: window,
             initialFrame: initialFrame,
-            initialMousePosition: initialInteractionAnchor
+            initialMousePosition: initialInteractionAnchor,
+            gridConfiguration: isGridModeEnabled ? GridConfiguration.fromDefaults() : nil
         )
 
-        if !Defaults[.disableCursorInteraction] {
+        _ = resolveAndStoreTargetScreen(action: startingAction, window: window)
+
+        if isGridModeEnabled {
+            gridInteractionObserver.start()
+        } else if !Defaults[.disableCursorInteraction] {
             mouseInteractionObserver.start(initialMousePosition: resizeContext.initialMousePosition)
         }
 
@@ -173,6 +193,10 @@ extension LoopManager {
     }
 
     private func resolveInitialInteractionAnchor() -> CGPoint {
+        if isGridModeEnabled {
+            return NSEvent.mouseLocation
+        }
+
         guard Defaults[.lockRadialMenuToCenter] else {
             return NSEvent.mouseLocation
         }
@@ -190,6 +214,7 @@ extension LoopManager {
 
         triggerKeyTimeoutTimer.cancel()
         mouseInteractionObserver.stop()
+        gridInteractionObserver.stop()
 
         // Handle normal actions with a target window
         if !forceClose {
@@ -218,6 +243,32 @@ extension LoopManager {
 // MARK: - Changing Actions
 
 extension LoopManager {
+    private func handleGridSelectionUpdate(_ update: GridInteractionObserver.SelectionUpdate) async {
+        guard isLoopActive else {
+            return
+        }
+
+        if let screen = update.screen,
+           resizeContext.screen?.isSameScreen(screen) != true {
+            resizeContext.setScreen(to: screen)
+        }
+
+        resizeContext.setGridState(
+            configuration: update.configuration,
+            selectedCells: update.cells,
+            isDragging: update.isDragging
+        )
+
+        await changeAction(
+            update.action,
+            disableHapticFeedback: update.action.direction == .noSelection,
+            canAdvanceCycle: false
+        )
+
+        // Ensure the grid overlay reflects state changes even when the selected action remains unchanged.
+        indicatorService.openAndUpdate(context: resizeContext)
+    }
+
     /// Changes the action to the provided one, or the next cycle action if available.
     /// - Parameters:
     ///   - newAction: The action to change to. If a cycle is provided, Loop will use the current action as context to choose an appropriate next action.

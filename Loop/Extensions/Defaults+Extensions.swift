@@ -59,6 +59,9 @@ extension Defaults.Keys {
     static let stashedWindowVisiblePadding = Key<CGFloat>("stashedWindowVisiblePadding", default: 20, iCloud: true)
     static let shiftFocusWhenStashed = Key<Bool>("shiftFocusWhenStashed", default: true, iCloud: true)
     static let cycleModeRestartEnabled = Key<Bool>("cycleModeRestartEnabled", default: false, iCloud: true)
+    static let gridModeEnabled = Key<Bool>("gridModeEnabled", default: false, iCloud: true)
+    static let gridColumns = Key<Int>("gridColumns", default: 3, iCloud: true)
+    static let gridRows = Key<Int>("gridRows", default: 3, iCloud: true)
 
     // Keybinds
     static let triggerKey = Key<Set<CGKeyCode>>("trigger", default: [.kVK_Function], iCloud: true)
