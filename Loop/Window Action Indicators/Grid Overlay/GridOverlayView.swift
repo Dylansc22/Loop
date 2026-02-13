@@ -21,42 +21,63 @@ struct GridOverlayView: View {
 
     var body: some View {
         GeometryReader { geometry in
+            let safeRect = safeRectInOverlay(geometry: geometry)
+
             ZStack(alignment: .topLeading) {
-                Rectangle()
-                    .fill(.ultraThinMaterial)
-                    .overlay {
-                        LinearGradient(
-                            colors: [accentColorController.color1, accentColorController.color2],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                        .opacity(0.08)
-                    }
+                subtleBackground()
 
-                highlightedCellsLayer(geometry: geometry)
-
-                gridLineLayer(geometry: geometry)
-
-                RoundedRectangle(cornerRadius: previewCornerRadius)
-                    .stroke(.white.opacity(0.24), lineWidth: viewModel.isDragging ? 2 : 1)
+                if safeRect.width > 0, safeRect.height > 0 {
+                    gridSurface()
+                        .frame(width: safeRect.width, height: safeRect.height)
+                        .offset(x: safeRect.minX, y: safeRect.minY)
+                }
             }
-            .clipShape(.rect(cornerRadius: previewCornerRadius))
             .animation(luminareAnimationFast, value: viewModel.highlightedCells)
             .animation(luminareAnimationFast, value: viewModel.isDragging)
         }
         .opacity(viewModel.isShown ? 1 : 0)
     }
 
-    private func highlightedCellsLayer(geometry: GeometryProxy) -> some View {
-        let columns = max(viewModel.gridConfiguration.columns, 1)
-        let rows = max(viewModel.gridConfiguration.rows, 1)
-        let cellWidth = geometry.size.width / CGFloat(columns)
-        let cellHeight = geometry.size.height / CGFloat(rows)
+    private func subtleBackground() -> some View {
+        Rectangle()
+            .fill(Color.white.opacity(0.005))
+            .overlay {
+                VisualEffectView(material: .hudWindow, blendingMode: .behindWindow, state: .active)
+                    .opacity(0.02)
+            }
+            .overlay {
+                LinearGradient(
+                    colors: [accentColorController.color1, accentColorController.color2],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .opacity(0.006)
+            }
+    }
+
+    private func gridSurface() -> some View {
+        ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: previewCornerRadius)
+                .fill(Color.white.opacity(0.012))
+
+            highlightedCellsLayer()
+
+            gridLineLayer()
+
+            RoundedRectangle(cornerRadius: previewCornerRadius)
+                .stroke(.white.opacity(0.2), lineWidth: viewModel.isDragging ? 1.5 : 1)
+        }
+        .clipShape(.rect(cornerRadius: previewCornerRadius))
+    }
+
+    private func highlightedCellsLayer() -> some View {
         let cells = viewModel.highlightedCells.sorted {
             $0.row == $1.row ? $0.column < $1.column : $0.row < $1.row
         }
 
-        return ForEach(cells) { cell in
+        return ForEach(cells, id: \.self) { cell in
+            let frame = localCellFrame(cell: cell)
+
             RoundedRectangle(cornerRadius: 6)
                 .fill(
                     LinearGradient(
@@ -64,28 +85,22 @@ struct GridOverlayView: View {
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
-                    .opacity(viewModel.isDragging ? 0.38 : 0.28)
+                    .opacity(viewModel.isDragging ? 0.12 : 0.07)
                 )
                 .overlay {
                     RoundedRectangle(cornerRadius: 6)
-                        .stroke(.white.opacity(0.25), lineWidth: 1)
+                        .stroke(.white.opacity(0.12), lineWidth: 1)
                 }
-                .frame(
-                    width: cell.column == columns - 1 ? geometry.size.width - (CGFloat(cell.column) * cellWidth) : cellWidth,
-                    height: cell.row == rows - 1 ? geometry.size.height - (CGFloat(cell.row) * cellHeight) : cellHeight
-                )
-                .offset(
-                    x: CGFloat(cell.column) * cellWidth,
-                    y: CGFloat(cell.row) * cellHeight
-                )
+                .frame(width: frame.width, height: frame.height)
+                .offset(x: frame.minX, y: frame.minY)
         }
     }
 
-    private func gridLineLayer(geometry: GeometryProxy) -> some View {
-        let columns = max(viewModel.gridConfiguration.columns, 1)
-        let rows = max(viewModel.gridConfiguration.rows, 1)
-        let width = geometry.size.width
-        let height = geometry.size.height
+    private func gridLineLayer() -> some View {
+        let columns = Swift.max(viewModel.gridConfiguration.columns, 1)
+        let rows = Swift.max(viewModel.gridConfiguration.rows, 1)
+        let width = viewModel.safeBounds.width
+        let height = viewModel.safeBounds.height
 
         return Path { path in
             guard width > 0, height > 0 else { return }
@@ -103,5 +118,36 @@ struct GridOverlayView: View {
             }
         }
         .stroke(.white.opacity(0.3), lineWidth: 1)
+    }
+
+    private func safeRectInOverlay(geometry: GeometryProxy) -> CGRect {
+        guard viewModel.displayBounds.width > 0, viewModel.displayBounds.height > 0 else {
+            return CGRect(origin: .zero, size: geometry.size)
+        }
+
+        let localRect = CGRect(
+            x: viewModel.safeBounds.minX - viewModel.displayBounds.minX,
+            y: viewModel.safeBounds.minY - viewModel.displayBounds.minY,
+            width: viewModel.safeBounds.width,
+            height: viewModel.safeBounds.height
+        )
+
+        let overlayRect = CGRect(origin: .zero, size: geometry.size)
+        return localRect.intersection(overlayRect)
+    }
+
+    private func localCellFrame(cell: GridCell) -> CGRect {
+        let absoluteFrame = viewModel.gridConfiguration.calculateCellFrame(
+            row: cell.row,
+            column: cell.column,
+            in: viewModel.safeBounds
+        )
+
+        return CGRect(
+            x: absoluteFrame.minX - viewModel.safeBounds.minX,
+            y: absoluteFrame.minY - viewModel.safeBounds.minY,
+            width: absoluteFrame.width,
+            height: absoluteFrame.height
+        )
     }
 }
