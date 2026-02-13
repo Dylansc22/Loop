@@ -14,8 +14,12 @@ import SwiftUI
 final class GridOverlayController: WindowActionIndicator {
     private let viewModel = GridOverlayViewModel()
     private var controller: NSWindowController?
+    private var closeTask: Task<Void, Never>?
 
     func open(context: ResizeContext) {
+        closeTask?.cancel()
+        closeTask = nil
+
         guard let screen = context.screen else {
             return
         }
@@ -53,14 +57,16 @@ final class GridOverlayController: WindowActionIndicator {
     }
 
     func close() {
-        guard let windowController = controller else { return }
-        controller = nil
+        guard closeTask == nil, let windowController = controller else { return }
 
-        Task {
+        closeTask = Task { [weak self] in
             viewModel.setIsShown(false)
             try? await Task.sleep(for: .seconds(0.15))
+            guard !Task.isCancelled else { return }
             windowController.window?.orderOut(nil)
             windowController.close()
+            self?.controller = nil
+            self?.closeTask = nil
 
             log.ui("Controller closed")
         }
