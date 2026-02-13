@@ -23,14 +23,16 @@ struct GridPreviewView: View {
 
             ScreenView {
                 GeometryReader { geometry in
-                    let safeColumns = max(columns, 1)
-                    let safeRows = max(rows, 1)
+                    let safeColumns = Swift.max(columns, 1)
+                    let safeRows = Swift.max(rows, 1)
+                    let rowIndices = Array(0..<safeRows)
+                    let columnIndices = Array(0..<safeColumns)
                     let cellWidth = geometry.size.width / CGFloat(safeColumns)
                     let cellHeight = geometry.size.height / CGFloat(safeRows)
 
                     ZStack(alignment: .topLeading) {
-                        ForEach(0..<safeRows, id: \.self) { row in
-                            ForEach(0..<safeColumns, id: \.self) { column in
+                        ForEach(rowIndices, id: \.self) { row in
+                            ForEach(columnIndices, id: \.self) { column in
                                 let cell = GridCell(row: row, column: column)
                                 let isSelected = selectedCells.contains(cell)
 

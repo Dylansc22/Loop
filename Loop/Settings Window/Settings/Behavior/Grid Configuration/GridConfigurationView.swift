@@ -45,7 +45,9 @@ struct GridConfigurationView: View {
                     .padding(.top, 4)
             }
         }
-        .animation(luminareAnimation, value: [gridModeEnabled, gridColumns, gridRows])
+        .animation(luminareAnimation, value: gridModeEnabled)
+        .animation(luminareAnimation, value: gridColumns)
+        .animation(luminareAnimation, value: gridRows)
     }
 
     private var columnsBinding: Binding<Double> {
