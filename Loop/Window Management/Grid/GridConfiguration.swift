@@ -11,7 +11,7 @@ import Foundation
 
 struct GridConfiguration: Codable, Hashable {
     static let minDimension = 2
-    static let maxDimension = 6
+    static let maxDimension = 10
 
     var isEnabled: Bool
     var columns: Int
