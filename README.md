@@ -128,6 +128,38 @@ To build and test Loop locally:
 
 For detailed contribution guidelines, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
+### Daily Usage on Your Mac
+
+If you want to run your local branch as your regular Loop app:
+
+1. **Build a local app** (Release recommended)
+   ```bash
+   cd /Users/dylan/01-workbench/loop
+   xcodebuild -project Loop.xcodeproj -scheme Loop -configuration Release -destination 'platform=macOS' -derivedDataPath /tmp/loop-derived build
+   ```
+
+2. **Install it to Applications**
+   ```bash
+   rm -rf /Applications/Loop.app
+   cp -R /tmp/loop-derived/Build/Products/Release/Loop.app /Applications/Loop.app
+   open /Applications/Loop.app
+   ```
+
+3. **Grant required permissions**
+   - `System Settings -> Privacy & Security -> Accessibility -> enable Loop`
+   - Approve any additional prompts Loop requests.
+
+4. **Configure once in Loop settings**
+   - Set your trigger key.
+   - Enable `Launch at login`.
+   - Configure grid mode options (`Enable grid mode`, rows/columns, `Show grid lines`).
+   - Configure padding in `Behavior -> Window -> Padding -> Configure...`.
+
+5. **Use Loop daily**
+   - Keep Loop running in the menu bar.
+   - Use your trigger key to activate Loop.
+   - In grid mode, select with hover/drag and commit on mouse release/click (or trigger release).
+
 ### Triggering
 
 Loop uses a trigger key to function. This key must be held down or pressed to activate certain features within Loop. To access the radial menu, hold down the trigger key and move the cursor in the desired direction. Users who prefer keyboard shortcuts can assign a key to work with the trigger key, activating specific actions. The trigger key can be set in the "Behavior" tab of the "Settings" section. The trigger key can consist of one or multiple keys.
