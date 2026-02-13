@@ -374,12 +374,18 @@ final class GridInteractionObserver {
         var updatedSelection = workingSelection
 
         if rowDelta > 0 {
-            // Grow downward only.
-            guard bounds.maxRow < config.rows - 1 else {
+            if bounds.maxRow < config.rows - 1 {
+                // Grow downward.
+                for column in bounds.minColumn...bounds.maxColumn {
+                    updatedSelection.insert(GridCell(row: bounds.maxRow + 1, column: column))
+                }
+            } else if bounds.minRow < bounds.maxRow {
+                // At bottom edge — shrink from top instead.
+                for column in bounds.minColumn...bounds.maxColumn {
+                    updatedSelection.remove(GridCell(row: bounds.minRow, column: column))
+                }
+            } else {
                 return false
-            }
-            for column in bounds.minColumn...bounds.maxColumn {
-                updatedSelection.insert(GridCell(row: bounds.maxRow + 1, column: column))
             }
         } else if rowDelta < 0 {
             // Shrink from bottom only.
@@ -392,12 +398,18 @@ final class GridInteractionObserver {
         }
 
         if columnDelta > 0 {
-            // Grow to the right only.
-            guard bounds.maxColumn < config.columns - 1 else {
+            if bounds.maxColumn < config.columns - 1 {
+                // Grow to the right.
+                for row in bounds.minRow...bounds.maxRow {
+                    updatedSelection.insert(GridCell(row: row, column: bounds.maxColumn + 1))
+                }
+            } else if bounds.minColumn < bounds.maxColumn {
+                // At right edge — shrink from left instead.
+                for row in bounds.minRow...bounds.maxRow {
+                    updatedSelection.remove(GridCell(row: row, column: bounds.minColumn))
+                }
+            } else {
                 return false
-            }
-            for row in bounds.minRow...bounds.maxRow {
-                updatedSelection.insert(GridCell(row: row, column: bounds.maxColumn + 1))
             }
         } else if columnDelta < 0 {
             // Shrink from the right only.
