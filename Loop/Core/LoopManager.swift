@@ -152,10 +152,12 @@ extension LoopManager {
             .zero
         }
 
+        let initialInteractionAnchor = resolveInitialInteractionAnchor()
+
         resizeContext = ResizeContext(
             window: window,
             initialFrame: initialFrame,
-            initialMousePosition: NSEvent.mouseLocation
+            initialMousePosition: initialInteractionAnchor
         )
 
         if !Defaults[.disableCursorInteraction] {
@@ -168,6 +170,15 @@ extension LoopManager {
         await changeAction(startingAction, disableHapticFeedback: true)
 
         triggerKeyTimeoutTimer.start()
+    }
+
+    private func resolveInitialInteractionAnchor() -> CGPoint {
+        guard Defaults[.lockRadialMenuToCenter] else {
+            return NSEvent.mouseLocation
+        }
+
+        let screen = NSScreen.screenWithMouse ?? NSScreen.main ?? NSScreen.screens.first
+        return screen?.frame.center ?? NSEvent.mouseLocation
     }
 
     private func closeLoop(forceClose: Bool) async {

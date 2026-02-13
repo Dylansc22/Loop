@@ -93,13 +93,18 @@ extension Defaults.Keys {
     static let automaticallyUpdate = Key<Bool>("automaticallyUpdate", default: false, iCloud: true)
 }
 
+// MARK: - Radial Menu Settings
+
+extension Defaults.Keys {
+    /// Whether to anchor Loop interactions to the center of the screen containing the cursor.
+    /// When enabled, both the radial menu and mouse interaction origin start at the screen center.
+    /// When disabled (default), the interaction origin starts at the mouse position.
+    static let lockRadialMenuToCenter = Key<Bool>("lockRadialMenuToCenter", default: false, iCloud: true)
+}
+
 // MARK: - Hidden Settings
 
 extension Defaults.Keys {
-    /// Lock radial menu to the center of the screen
-    /// Adjust with `defaults write com.MrKai77.Loop lockRadialMenuToCenter -bool true`
-    /// Reset with `defaults delete com.MrKai77.Loop lockRadialMenuToCenter`
-    static let lockRadialMenuToCenter = Key<Bool>("lockRadialMenuToCenter", default: false, iCloud: true)
 
     /// Minimum screen size, defined in inches on the diagonal, for which padding will be applied on windows.
     /// Adjust with `defaults write com.MrKai77.Loop paddingMinimumScreenSize -float x`

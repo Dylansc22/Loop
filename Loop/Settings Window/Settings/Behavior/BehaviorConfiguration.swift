@@ -16,6 +16,7 @@ struct BehaviorConfigurationView: View {
     @Default(.startHidden) var startHidden
     @Default(.hideMenuBarIcon) var hideMenuBarIcon
     @Default(.animationConfiguration) var animationConfiguration
+    @Default(.lockRadialMenuToCenter) var lockRadialMenuToCenter
     @Default(.windowSnapping) var windowSnapping
     @Default(.suppressMissionControlOnTopDrag) var suppressMissionControlOnTopDrag
     @Default(.restoreWindowFrameOnDrag) var restoreWindowFrameOnDrag
@@ -59,6 +60,8 @@ struct BehaviorConfigurationView: View {
             LuminareToggle("Start hidden", isOn: $startHidden)
 
             LuminareToggle("Hide menu bar icon", isOn: $hideMenuBarIcon)
+
+            LuminareToggle("Center radial menu on screen", isOn: $lockRadialMenuToCenter)
 
             LuminareSliderPicker(
                 "Animation speed",

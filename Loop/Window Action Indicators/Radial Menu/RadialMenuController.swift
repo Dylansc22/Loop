@@ -5,7 +5,6 @@
 //  Created by Kai Azim on 2023-01-23.
 //
 
-import Defaults
 import Scribe
 import SwiftUI
 
@@ -42,25 +41,13 @@ final class RadialMenuController: WindowActionIndicator {
         panel.level = .screenSaver
         panel.contentView = NSHostingView(rootView: RadialMenuView(viewModel: viewModel))
 
-        // Position the panel
-        if Defaults[.lockRadialMenuToCenter], let screen = NSScreen.main {
-            // Position at the center of the screen
-            let screenFrame = screen.frame
-            panel.setFrameOrigin(
-                NSPoint(
-                    x: screenFrame.midX - windowSize / 2,
-                    y: screenFrame.midY - windowSize / 2
-                )
+        // Position at the same anchor used by interaction logic.
+        panel.setFrameOrigin(
+            NSPoint(
+                x: mouseX - windowSize / 2,
+                y: mouseY - windowSize / 2
             )
-        } else {
-            // Position at the mouse cursor
-            panel.setFrameOrigin(
-                NSPoint(
-                    x: mouseX - windowSize / 2,
-                    y: mouseY - windowSize / 2
-                )
-            )
-        }
+        )
 
         panel.orderFrontRegardless()
 
