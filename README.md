@@ -94,6 +94,40 @@ brew install loop
 
 Navigate to the [release page](https://github.com/MrKai77/Loop/releases/latest) and download the latest `.zip` file located at the bottom, or [click me](https://github.com/MrKai77/Loop/releases/latest/download/Loop.zip).
 
+### Development Setup
+
+To build and test Loop locally:
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/YOUR_USERNAME/Loop.git
+   cd Loop
+   ```
+
+2. **Open in Xcode**
+   ```bash
+   open Loop.xcodeproj
+   ```
+
+3. **Configure signing** (first time only)
+   - Wait for dependencies to resolve
+   - Select `Loop` in the project navigator
+   - Go to `Signing & Capabilities`
+   - Set `Team` to your Apple ID
+   - Set `Signing Certificate` to `Development`
+
+4. **Build and run**
+   - Press `⌘ + R` to build and run
+   - Grant Accessibility permissions when prompted
+
+5. **Format code before committing**
+   ```bash
+   brew install swiftformat
+   swiftformat .
+   ```
+
+For detailed contribution guidelines, see [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ### Triggering
 
 Loop uses a trigger key to function. This key must be held down or pressed to activate certain features within Loop. To access the radial menu, hold down the trigger key and move the cursor in the desired direction. Users who prefer keyboard shortcuts can assign a key to work with the trigger key, activating specific actions. The trigger key can be set in the "Behavior" tab of the "Settings" section. The trigger key can consist of one or multiple keys.
