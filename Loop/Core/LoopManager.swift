@@ -97,9 +97,17 @@ final class LoopManager {
                 await self?.handleGridSelectionUpdate(update)
             }
         },
+        selectionCompleted: { [weak self] update in
+            Task {
+                await self?.handleGridSelectionCompletion(update)
+            }
+        },
         checkIfLoopOpen: { [weak self] in self?.isLoopActive ?? false },
         configurationProvider: {
             GridConfiguration.fromDefaults()
+        },
+        interactionBoundsProvider: { [weak self] screen in
+            self?.gridInteractionBounds(for: screen) ?? screen.cgSafeScreenFrame
         }
     )
 
@@ -167,27 +175,58 @@ extension LoopManager {
             .zero
         }
 
+        var resolvedStartingAction = startingAction
         let initialInteractionAnchor = resolveInitialInteractionAnchor()
+        let gridConfiguration = isGridModeEnabled ? GridConfiguration.fromDefaults() : nil
 
         resizeContext = ResizeContext(
             window: window,
             initialFrame: initialFrame,
             initialMousePosition: initialInteractionAnchor,
-            gridConfiguration: isGridModeEnabled ? GridConfiguration.fromDefaults() : nil
+            gridConfiguration: gridConfiguration
         )
+
+        isLoopActive = true
 
         _ = resolveAndStoreTargetScreen(action: startingAction, window: window)
 
         if isGridModeEnabled {
-            gridInteractionObserver.start()
+            let initialSelection = resolveInitialGridSelection(
+                window: window,
+                screen: resizeContext.screen,
+                configuration: gridConfiguration ?? .fromDefaults(),
+                fallbackPoint: initialInteractionAnchor
+            )
+            let initialGridAction = GridWindowAction.createAction(
+                from: initialSelection,
+                config: gridConfiguration ?? .fromDefaults(),
+                screen: resizeContext.gridInteractionBounds
+            )
+
+            resizeContext.setGridState(
+                configuration: gridConfiguration,
+                selectedCells: initialSelection,
+                isDragging: false
+            )
+
+            if resolvedStartingAction.direction == .noSelection,
+               !initialSelection.isEmpty,
+               !initialGridAction.direction.isNoOp {
+                resolvedStartingAction = initialGridAction
+                resizeContext.setAction(to: initialGridAction, parent: nil)
+            }
+
+            gridInteractionObserver.start(
+                initialSelection: initialSelection,
+                initialScreen: resizeContext.screen
+            )
         } else if !Defaults[.disableCursorInteraction] {
             mouseInteractionObserver.start(initialMousePosition: resizeContext.initialMousePosition)
         }
 
         indicatorService.openAndUpdate(context: resizeContext)
 
-        isLoopActive = true
-        await changeAction(startingAction, disableHapticFeedback: true)
+        await changeAction(resolvedStartingAction, disableHapticFeedback: true)
 
         triggerKeyTimeoutTimer.start()
     }
@@ -203,6 +242,181 @@ extension LoopManager {
 
         let screen = NSScreen.screenWithMouse ?? NSScreen.main ?? NSScreen.screens.first
         return screen?.frame.center ?? NSEvent.mouseLocation
+    }
+
+    private func resolveInitialGridSelection(
+        window: Window?,
+        screen: NSScreen?,
+        configuration: GridConfiguration,
+        fallbackPoint: CGPoint
+    ) -> Set<GridCell> {
+        guard let screen else {
+            return []
+        }
+
+        let interactionBounds = gridInteractionBounds(for: screen)
+
+        if let window {
+            let targetFrame = window.frame.intersection(interactionBounds)
+            let pointerCell = configuration.cellAt(point: fallbackPoint, in: interactionBounds)
+
+            if !targetFrame.isNull,
+               !targetFrame.isEmpty,
+               let matchedCells = bestMatchingGridSelection(
+                   for: targetFrame,
+                   in: interactionBounds,
+                   configuration: configuration,
+                   pointerCell: pointerCell
+               ) {
+                return matchedCells
+            }
+        }
+
+        if let fallbackCell = configuration.cellAt(point: fallbackPoint, in: interactionBounds) {
+            return [fallbackCell]
+        }
+
+        return []
+    }
+
+    private func gridInteractionBounds(for screen: NSScreen?) -> CGRect {
+        guard let screen else {
+            return .zero
+        }
+
+        return PaddingConfiguration
+            .getConfiguredPadding(for: screen)
+            .applyToBounds(screen.cgSafeScreenFrame)
+    }
+
+    private func bestMatchingGridSelection(
+        for targetFrame: CGRect,
+        in safeBounds: CGRect,
+        configuration: GridConfiguration,
+        pointerCell: GridCell?
+    ) -> Set<GridCell>? {
+        struct Candidate {
+            let originRow: Int
+            let originColumn: Int
+            let spanRows: Int
+            let spanColumns: Int
+            let spanError: Double
+            let iou: Double
+            let sizeError: CGFloat
+            let centerError: CGFloat
+            let containsPointer: Bool
+        }
+
+        let cellWidth = safeBounds.width / CGFloat(configuration.columns)
+        let cellHeight = safeBounds.height / CGFloat(configuration.rows)
+        guard cellWidth > 0, cellHeight > 0 else {
+            return nil
+        }
+
+        let targetColumns = Double(targetFrame.width / cellWidth)
+        let targetRows = Double(targetFrame.height / cellHeight)
+        let targetArea = max(targetFrame.width * targetFrame.height, 1)
+        var candidates: [Candidate] = []
+
+        for spanRows in 1...configuration.rows {
+            for spanColumns in 1...configuration.columns {
+                for originRow in 0...(configuration.rows - spanRows) {
+                    for originColumn in 0...(configuration.columns - spanColumns) {
+                        let topLeft = configuration.calculateCellFrame(
+                            row: originRow,
+                            column: originColumn,
+                            in: safeBounds
+                        )
+                        let bottomRight = configuration.calculateCellFrame(
+                            row: originRow + spanRows - 1,
+                            column: originColumn + spanColumns - 1,
+                            in: safeBounds
+                        )
+                        let candidateFrame = topLeft.union(bottomRight)
+                        let intersection = candidateFrame.intersection(targetFrame)
+                        let intersectionArea = max(intersection.width * intersection.height, 0)
+                        let candidateArea = max(candidateFrame.width * candidateFrame.height, 1)
+                        let unionArea = candidateArea + targetArea - intersectionArea
+                        let iou = unionArea > 0 ? Double(intersectionArea / unionArea) : 0
+                        let spanError = abs(Double(spanColumns) - targetColumns)
+                            + abs(Double(spanRows) - targetRows)
+
+                        let sizeError = abs(candidateFrame.width - targetFrame.width)
+                            + abs(candidateFrame.height - targetFrame.height)
+                        let centerError = candidateFrame.center.distance(to: targetFrame.center)
+
+                        let containsPointer = if let pointerCell {
+                            pointerCell.row >= originRow
+                                && pointerCell.row < originRow + spanRows
+                                && pointerCell.column >= originColumn
+                                && pointerCell.column < originColumn + spanColumns
+                        } else {
+                            false
+                        }
+
+                        candidates.append(
+                            Candidate(
+                                originRow: originRow,
+                                originColumn: originColumn,
+                                spanRows: spanRows,
+                                spanColumns: spanColumns,
+                                spanError: spanError,
+                                iou: iou,
+                                sizeError: sizeError,
+                                centerError: centerError,
+                                containsPointer: containsPointer
+                            )
+                        )
+                    }
+                }
+            }
+        }
+
+        guard !candidates.isEmpty else {
+            return nil
+        }
+
+        let epsilon = 0.0001
+        let sorted = candidates.sorted { lhs, rhs in
+            if abs(lhs.spanError - rhs.spanError) > epsilon {
+                return lhs.spanError < rhs.spanError
+            }
+
+            if abs(lhs.iou - rhs.iou) > epsilon {
+                return lhs.iou > rhs.iou
+            }
+
+            if abs(lhs.sizeError - rhs.sizeError) > epsilon {
+                return lhs.sizeError < rhs.sizeError
+            }
+
+            if abs(lhs.centerError - rhs.centerError) > epsilon {
+                return lhs.centerError < rhs.centerError
+            }
+
+            if lhs.containsPointer != rhs.containsPointer {
+                return lhs.containsPointer
+            }
+
+            if lhs.originRow != rhs.originRow {
+                return lhs.originRow < rhs.originRow
+            }
+
+            return lhs.originColumn < rhs.originColumn
+        }
+
+        guard let best = sorted.first else {
+            return nil
+        }
+
+        var result: Set<GridCell> = []
+        for row in best.originRow..<(best.originRow + best.spanRows) {
+            for column in best.originColumn..<(best.originColumn + best.spanColumns) {
+                result.insert(GridCell(row: row, column: column))
+            }
+        }
+
+        return result
     }
 
     private func closeLoop(forceClose: Bool) async {
@@ -243,6 +457,30 @@ extension LoopManager {
 // MARK: - Changing Actions
 
 extension LoopManager {
+    private func handleGridSelectionCompletion(_ update: GridInteractionObserver.SelectionUpdate) async {
+        guard
+            isLoopActive,
+            !update.cells.isEmpty,
+            !update.action.direction.isNoOp
+        else {
+            return
+        }
+
+        if let screen = update.screen,
+           resizeContext.screen?.isSameScreen(screen) != true {
+            resizeContext.setScreen(to: screen)
+        }
+
+        resizeContext.setGridState(
+            configuration: update.configuration,
+            selectedCells: update.cells,
+            isDragging: false
+        )
+        resizeContext.setAction(to: update.action, parent: nil)
+
+        await closeLoop(forceClose: false)
+    }
+
     private func handleGridSelectionUpdate(_ update: GridInteractionObserver.SelectionUpdate) async {
         guard isLoopActive else {
             return

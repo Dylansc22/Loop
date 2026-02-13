@@ -14,6 +14,7 @@ struct GridOverlayView: View {
     @ObservedObject private var viewModel: GridOverlayViewModel
 
     @Default(.previewCornerRadius) private var previewCornerRadius
+    @Default(.gridShowLines) private var gridShowLines
 
     init(viewModel: GridOverlayViewModel) {
         self.viewModel = viewModel
@@ -21,15 +22,15 @@ struct GridOverlayView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let safeRect = safeRectInOverlay(geometry: geometry)
+            let gridRect = gridRectInOverlay(geometry: geometry)
 
             ZStack(alignment: .topLeading) {
                 subtleBackground()
 
-                if safeRect.width > 0, safeRect.height > 0 {
+                if gridRect.width > 0, gridRect.height > 0 {
                     gridSurface()
-                        .frame(width: safeRect.width, height: safeRect.height)
-                        .offset(x: safeRect.minX, y: safeRect.minY)
+                        .frame(width: gridRect.width, height: gridRect.height)
+                        .offset(x: gridRect.minX, y: gridRect.minY)
                 }
             }
             .animation(luminareAnimationFast, value: viewModel.highlightedCells)
@@ -62,7 +63,9 @@ struct GridOverlayView: View {
 
             highlightedCellsLayer()
 
-            gridLineLayer()
+            if gridShowLines {
+                gridLineLayer()
+            }
 
             RoundedRectangle(cornerRadius: previewCornerRadius)
                 .stroke(.white.opacity(0.2), lineWidth: viewModel.isDragging ? 1.5 : 1)
@@ -85,11 +88,11 @@ struct GridOverlayView: View {
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
-                    .opacity(viewModel.isDragging ? 0.12 : 0.07)
+                    .opacity(viewModel.isDragging ? 0.045 : 0.03)
                 )
                 .overlay {
                     RoundedRectangle(cornerRadius: 6)
-                        .stroke(.white.opacity(0.12), lineWidth: 1)
+                        .stroke(.white.opacity(viewModel.isDragging ? 0.09 : 0.06), lineWidth: 1)
                 }
                 .frame(width: frame.width, height: frame.height)
                 .offset(x: frame.minX, y: frame.minY)
@@ -99,8 +102,8 @@ struct GridOverlayView: View {
     private func gridLineLayer() -> some View {
         let columns = Swift.max(viewModel.gridConfiguration.columns, 1)
         let rows = Swift.max(viewModel.gridConfiguration.rows, 1)
-        let width = viewModel.safeBounds.width
-        let height = viewModel.safeBounds.height
+        let width = viewModel.gridBounds.width
+        let height = viewModel.gridBounds.height
 
         return Path { path in
             guard width > 0, height > 0 else { return }
@@ -120,16 +123,16 @@ struct GridOverlayView: View {
         .stroke(.white.opacity(0.3), lineWidth: 1)
     }
 
-    private func safeRectInOverlay(geometry: GeometryProxy) -> CGRect {
+    private func gridRectInOverlay(geometry: GeometryProxy) -> CGRect {
         guard viewModel.displayBounds.width > 0, viewModel.displayBounds.height > 0 else {
             return CGRect(origin: .zero, size: geometry.size)
         }
 
         let localRect = CGRect(
-            x: viewModel.safeBounds.minX - viewModel.displayBounds.minX,
-            y: viewModel.safeBounds.minY - viewModel.displayBounds.minY,
-            width: viewModel.safeBounds.width,
-            height: viewModel.safeBounds.height
+            x: viewModel.gridBounds.minX - viewModel.displayBounds.minX,
+            y: viewModel.gridBounds.minY - viewModel.displayBounds.minY,
+            width: viewModel.gridBounds.width,
+            height: viewModel.gridBounds.height
         )
 
         let overlayRect = CGRect(origin: .zero, size: geometry.size)
@@ -140,12 +143,12 @@ struct GridOverlayView: View {
         let absoluteFrame = viewModel.gridConfiguration.calculateCellFrame(
             row: cell.row,
             column: cell.column,
-            in: viewModel.safeBounds
+            in: viewModel.gridBounds
         )
 
         return CGRect(
-            x: absoluteFrame.minX - viewModel.safeBounds.minX,
-            y: absoluteFrame.minY - viewModel.safeBounds.minY,
+            x: absoluteFrame.minX - viewModel.gridBounds.minX,
+            y: absoluteFrame.minY - viewModel.gridBounds.minY,
             width: absoluteFrame.width,
             height: absoluteFrame.height
         )

@@ -15,12 +15,15 @@ struct GridConfigurationView: View {
     @Default(.gridModeEnabled) private var gridModeEnabled
     @Default(.gridColumns) private var gridColumns
     @Default(.gridRows) private var gridRows
+    @Default(.gridShowLines) private var gridShowLines
 
     var body: some View {
         LuminareSection(String(localized: "Grid", comment: "Section header shown in settings")) {
             LuminareToggle("Enable grid mode", isOn: $gridModeEnabled)
 
             if gridModeEnabled {
+                LuminareToggle("Show grid lines", isOn: $gridShowLines)
+
                 LuminareSlider(
                     "Columns",
                     value: columnsBinding,
@@ -41,7 +44,7 @@ struct GridConfigurationView: View {
                 )
                 .luminareSliderLayout(.compact(textBoxWidth: 48))
 
-                GridPreviewView(columns: gridColumns, rows: gridRows)
+                GridPreviewView(columns: gridColumns, rows: gridRows, showGridLines: gridShowLines)
                     .padding(.top, 4)
             }
         }

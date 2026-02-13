@@ -13,6 +13,8 @@ public struct ScreenView<Content>: View where Content: View {
     @Environment(\.luminareAnimationFast) private var animationFast
 
     let isBlurred: Bool
+    let containerContentMode: ContentMode
+    let backgroundContentMode: ContentMode
     let content: () -> Content
 
     @State private var image: NSImage?
@@ -26,9 +28,13 @@ public struct ScreenView<Content>: View where Content: View {
 
     public init(
         isBlurred: Bool = false,
+        containerContentMode: ContentMode = .fill,
+        backgroundContentMode: ContentMode = .fill,
         @ViewBuilder content: @escaping () -> Content
     ) {
         self.isBlurred = isBlurred
+        self.containerContentMode = containerContentMode
+        self.backgroundContentMode = backgroundContentMode
         self.content = content
     }
 
@@ -38,7 +44,7 @@ public struct ScreenView<Content>: View where Content: View {
                 if let image {
                     Image(nsImage: image)
                         .resizable()
-                        .aspectRatio(contentMode: .fill)
+                        .aspectRatio(contentMode: backgroundContentMode)
                         .frame(width: proxy.size.width, height: proxy.size.height)
                         .blur(radius: isBlurred ? 10 : 0)
                         .opacity(isBlurred ? 0.5 : 1)
@@ -66,7 +72,8 @@ public struct ScreenView<Content>: View where Content: View {
                 .inset(by: 3)
                 .stroke(.gray.opacity(0.2), lineWidth: 1)
         }
-        .aspectRatio(16 / 10, contentMode: .fill)
+        .aspectRatio(16 / 10, contentMode: containerContentMode)
+        .clipped()
         .task {
             guard let fetchedImage = await fetchImage() else {
                 return

@@ -62,6 +62,7 @@ extension Defaults.Keys {
     static let gridModeEnabled = Key<Bool>("gridModeEnabled", default: false, iCloud: true)
     static let gridColumns = Key<Int>("gridColumns", default: 3, iCloud: true)
     static let gridRows = Key<Int>("gridRows", default: 3, iCloud: true)
+    static let gridShowLines = Key<Bool>("gridShowLines", default: true, iCloud: true)
 
     // Keybinds
     static let triggerKey = Key<Set<CGKeyCode>>("trigger", default: [.kVK_Function], iCloud: true)

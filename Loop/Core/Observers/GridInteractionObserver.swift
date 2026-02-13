@@ -29,6 +29,7 @@ final class GridInteractionObserver {
     private let selectionCompleted: (SelectionUpdate) -> ()
     private let checkIfLoopOpen: () -> Bool
     private let configurationProvider: () -> GridConfiguration
+    private let interactionBoundsProvider: (NSScreen) -> CGRect
 
     // Event monitors
     private var mouseMovementMonitor: PassiveEventMonitor?
@@ -53,12 +54,14 @@ final class GridInteractionObserver {
         selectionChanged: @escaping (SelectionUpdate) -> (),
         selectionCompleted: @escaping (SelectionUpdate) -> (),
         checkIfLoopOpen: @escaping () -> Bool,
-        configurationProvider: @escaping () -> GridConfiguration
+        configurationProvider: @escaping () -> GridConfiguration,
+        interactionBoundsProvider: @escaping (NSScreen) -> CGRect
     ) {
         self.selectionChanged = selectionChanged
         self.selectionCompleted = selectionCompleted
         self.checkIfLoopOpen = checkIfLoopOpen
         self.configurationProvider = configurationProvider
+        self.interactionBoundsProvider = interactionBoundsProvider
     }
 
     func start(initialSelection: Set<GridCell> = [], initialScreen: NSScreen? = nil) {
@@ -94,7 +97,12 @@ final class GridInteractionObserver {
 
             let config = configurationProvider()
             let pointerCell = initialScreen
-                .flatMap { config.cellAt(point: pointerLocation, in: $0.cgSafeScreenFrame) }
+                .flatMap {
+                    config.cellAt(
+                        point: pointerLocation,
+                        in: interactionBoundsProvider($0)
+                    )
+                }
             configureHoverFootprint(cells: initialSelection, pointerCell: pointerCell)
         }
 
@@ -163,8 +171,8 @@ final class GridInteractionObserver {
 
         currentScreen = screen
 
-        let safeBounds = screen.cgSafeScreenFrame
-        let hoveredCell = config.cellAt(point: location, in: safeBounds)
+        let interactionBounds = interactionBoundsProvider(screen)
+        let hoveredCell = config.cellAt(point: location, in: interactionBounds)
 
         currentHoveredCell = hoveredCell
         if let hoveredCell {
@@ -201,13 +209,17 @@ final class GridInteractionObserver {
         dragStartScreen = screen
         currentScreen = screen
 
-        let safeBounds = screen.cgSafeScreenFrame
-        let startCell = config.cellAt(point: location, in: safeBounds)
+        let interactionBounds = interactionBoundsProvider(screen)
+        let startCell = config.cellAt(point: location, in: interactionBounds)
 
         var selection = GridSelection()
         selection.startCell = startCell
         selection.currentCells = startCell.map { [$0] } ?? []
-        selection.boundingFrame = selectionBoundingFrame(cells: selection.currentCells, configuration: config, in: safeBounds)
+        selection.boundingFrame = selectionBoundingFrame(
+            cells: selection.currentCells,
+            configuration: config,
+            in: interactionBounds
+        )
 
         dragSelection = selection
         selectedCells = selection.currentCells
@@ -233,11 +245,15 @@ final class GridInteractionObserver {
             dragStartPoint = location
 
             var resetSelection = GridSelection()
-            let safeBounds = screen.cgSafeScreenFrame
-            let startCell = config.cellAt(point: location, in: safeBounds)
+            let interactionBounds = interactionBoundsProvider(screen)
+            let startCell = config.cellAt(point: location, in: interactionBounds)
             resetSelection.startCell = startCell
             resetSelection.currentCells = startCell.map { [$0] } ?? []
-            resetSelection.boundingFrame = selectionBoundingFrame(cells: resetSelection.currentCells, configuration: config, in: safeBounds)
+            resetSelection.boundingFrame = selectionBoundingFrame(
+                cells: resetSelection.currentCells,
+                configuration: config,
+                in: interactionBounds
+            )
             dragSelection = resetSelection
         }
 
@@ -249,7 +265,7 @@ final class GridInteractionObserver {
             return
         }
 
-        let safeBounds = dragStartScreen.cgSafeScreenFrame
+        let interactionBounds = interactionBoundsProvider(dragStartScreen)
         let dragRect = CGRect(
             x: min(dragStartPoint.x, location.x),
             y: min(dragStartPoint.y, location.y),
@@ -261,19 +277,23 @@ final class GridInteractionObserver {
         let intersectingCells: Set<GridCell> = if isClickSelection {
             if let startCell = dragSelection?.startCell {
                 [startCell]
-            } else if let hoveredCell = config.cellAt(point: location, in: safeBounds) {
+            } else if let hoveredCell = config.cellAt(point: location, in: interactionBounds) {
                 [hoveredCell]
             } else {
                 []
             }
         } else {
-            Set(config.cellsIntersecting(rect: dragRect, in: safeBounds))
+            Set(config.cellsIntersecting(rect: dragRect, in: interactionBounds))
         }
         selectedCells = intersectingCells
 
         if var dragSelection {
             dragSelection.currentCells = intersectingCells
-            dragSelection.boundingFrame = selectionBoundingFrame(cells: intersectingCells, configuration: config, in: safeBounds)
+            dragSelection.boundingFrame = selectionBoundingFrame(
+                cells: intersectingCells,
+                configuration: config,
+                in: interactionBounds
+            )
             self.dragSelection = dragSelection
         }
 
@@ -297,7 +317,7 @@ final class GridInteractionObserver {
     }
 
     private func makeSelectionUpdate(configuration: GridConfiguration, screen: NSScreen?) -> SelectionUpdate {
-        let screenBounds = screen?.cgSafeScreenFrame ?? .zero
+        let screenBounds = screen.map(interactionBoundsProvider) ?? .zero
         let action = GridWindowAction.createAction(from: selectedCells, config: configuration, screen: screenBounds)
 
         return .init(

@@ -22,6 +22,7 @@ final class ResizeContext {
 
     private(set) var padding: PaddingConfiguration = .zero
     private(set) var paddedBounds: CGRect
+    private(set) var gridInteractionBounds: CGRect
 
     private(set) var action: WindowAction = .init(.noSelection)
     private(set) var parentAction: WindowAction?
@@ -63,6 +64,7 @@ final class ResizeContext {
         self.bounds = bounds
         self.padding = padding
         self.paddedBounds = padding.applyToBounds(bounds)
+        self.gridInteractionBounds = self.paddedBounds
         self.action = action
         self.parentAction = parentAction
         self.initialMousePosition = initialMousePosition
@@ -77,6 +79,7 @@ final class ResizeContext {
         bounds = screen?.cgSafeScreenFrame ?? .zero
         padding = PaddingConfiguration.getConfiguredPadding(for: screen)
         paddedBounds = padding.applyToBounds(bounds)
+        gridInteractionBounds = paddedBounds
         needsRecompute = true
     }
 
