@@ -21,6 +21,7 @@ enum WindowDirection: String, CaseIterable, Identifiable, Codable {
     case maximize = "Maximize", almostMaximize = "AlmostMaximize", fullscreen = "Fullscreen"
     case maximizeHeight = "MaximizeHeight", maximizeWidth = "MaximizeWidth", fillAvailableSpace = "FillAvailableSpace"
     case undo = "Undo", initialFrame = "InitialFrame", hide = "Hide", minimize = "Minimize", minimizeOthers = "MinimizeOthers"
+    case toggleAlmostMaximize = "ToggleAlmostMaximize"
     case macOSCenter = "MacOSCenter", center = "Center"
 
     // Halves
@@ -84,7 +85,7 @@ enum WindowDirection: String, CaseIterable, Identifiable, Codable {
     static var grow: [WindowDirection] { [.growTop, .growBottom, .growRight, .growLeft, .growHorizontal, .growVertical] }
     static var move: [WindowDirection] { [.moveUp, .moveDown, .moveRight, .moveLeft] }
     static var focus: [WindowDirection] { [.focusUp, .focusDown, .focusRight, .focusLeft, .focusNextInStack] }
-    static var more: [WindowDirection] { [.initialFrame, .undo, .custom, .cycle] }
+    static var more: [WindowDirection] { [.initialFrame, .undo, .toggleAlmostMaximize, .custom, .cycle] }
 
     // Computed properties for checking conditions
     var isNoOp: Bool { [.noSelection, .noAction].contains(self) }
@@ -98,12 +99,12 @@ enum WindowDirection: String, CaseIterable, Identifiable, Codable {
     var isCustomizable: Bool { [.custom, .stash].contains(self) }
 
     var hasRadialMenuAngle: Bool {
-        let noAngleActions: [WindowDirection] = [.noAction, .noSelection, .minimize, .minimizeOthers, .hide, .initialFrame, .undo, .cycle]
+        let noAngleActions: [WindowDirection] = [.noAction, .noSelection, .minimize, .minimizeOthers, .hide, .initialFrame, .undo, .toggleAlmostMaximize, .cycle]
         return !(noAngleActions.contains(self) || shouldFillRadialMenu || willChangeScreen || willAdjustSize || willShrink || willGrow || willMove || willFocusWindow)
     }
 
     var shouldFillRadialMenu: Bool {
-        [.fullscreen, .maximize, .almostMaximize, .maximizeHeight, .maximizeWidth, .fillAvailableSpace].contains(self) || willCenter
+        [.fullscreen, .maximize, .almostMaximize, .toggleAlmostMaximize, .maximizeHeight, .maximizeWidth, .fillAvailableSpace].contains(self) || willCenter
     }
 
     var frameMultiplyValues: CGRect? {

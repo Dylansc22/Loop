@@ -23,9 +23,9 @@ struct DirectionPickerView: View {
     private var moreSection: PickerSection<WindowDirection> {
         let title = String(localized: "More", comment: "Section header in the action picker of the Keybinds tab")
         if isInCycle {
-            return .init(title, [WindowDirection.custom])
+            return .init(title, [WindowDirection.toggleAlmostMaximize, WindowDirection.custom])
         } else {
-            return .init(title, [WindowDirection.custom, WindowDirection.cycle])
+            return .init(title, [WindowDirection.toggleAlmostMaximize, WindowDirection.custom, WindowDirection.cycle])
         }
     }
 

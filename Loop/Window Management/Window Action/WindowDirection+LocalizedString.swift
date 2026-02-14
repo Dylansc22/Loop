@@ -167,6 +167,8 @@ extension WindowDirection {
             String(localized: "Unstash", comment: "Window action")
         case .custom:
             String(localized: "Custom", comment: "Window action")
+        case .toggleAlmostMaximize:
+            String(localized: "Toggle Almost Maximize", comment: "Window action")
         case .cycle:
             String(localized: "Cycle", comment: "Window action")
         }

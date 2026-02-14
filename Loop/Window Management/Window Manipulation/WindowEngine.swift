@@ -24,6 +24,16 @@ enum WindowEngine {
             return nil
         }
 
+        // Resolve toggleAlmostMaximize before anything else
+        if context.action.direction == .toggleAlmostMaximize {
+            let bounds = context.paddedBounds
+            let isLarge = window.frame.width >= bounds.width * 0.6
+                && window.frame.height >= bounds.height * 0.6
+
+            let resolved: WindowDirection = isLarge ? .undo : .almostMaximize
+            context.setAction(to: .init(resolved), parent: nil)
+        }
+
         // Quick actions are handled by WindowActionEngine
         let quickActions: [WindowDirection] = [.hide, .minimize, .fullscreen, .minimizeOthers]
         guard !quickActions.contains(context.action.direction) else { return nil }

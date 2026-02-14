@@ -158,6 +158,15 @@ extension WindowFrameResolver {
         } else if direction == .macOSCenter {
             result = calculateMacOSCenterFrame(window: window, bounds: bounds)
 
+        } else if direction == .toggleAlmostMaximize, let window {
+            let isLarge = window.frame.width >= bounds.width * 0.6
+                && window.frame.height >= bounds.height * 0.6
+            if isLarge {
+                result = getLastActionFrame(window: window, bounds: bounds)
+            } else {
+                result = applyFrameMultiplyValues(for: .init(.almostMaximize), to: bounds)
+            }
+
         } else if direction == .undo, let window {
             result = getLastActionFrame(window: window, bounds: bounds)
 
