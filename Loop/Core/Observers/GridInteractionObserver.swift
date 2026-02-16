@@ -379,7 +379,7 @@ final class GridInteractionObserver {
                 for column in bounds.minColumn...bounds.maxColumn {
                     updatedSelection.insert(GridCell(row: bounds.maxRow + 1, column: column))
                 }
-            } else if bounds.minRow < bounds.maxRow {
+            } else if (bounds.maxRow - bounds.minRow + 1) > config.minRows {
                 // At bottom edge — shrink from top instead.
                 for column in bounds.minColumn...bounds.maxColumn {
                     updatedSelection.remove(GridCell(row: bounds.minRow, column: column))
@@ -389,7 +389,7 @@ final class GridInteractionObserver {
             }
         } else if rowDelta < 0 {
             // Shrink from bottom only.
-            guard bounds.maxRow > bounds.minRow else {
+            guard (bounds.maxRow - bounds.minRow + 1) > config.minRows else {
                 return false
             }
             for column in bounds.minColumn...bounds.maxColumn {
@@ -403,7 +403,7 @@ final class GridInteractionObserver {
                 for row in bounds.minRow...bounds.maxRow {
                     updatedSelection.insert(GridCell(row: row, column: bounds.maxColumn + 1))
                 }
-            } else if bounds.minColumn < bounds.maxColumn {
+            } else if (bounds.maxColumn - bounds.minColumn + 1) > config.minColumns {
                 // At right edge — shrink from left instead.
                 for row in bounds.minRow...bounds.maxRow {
                     updatedSelection.remove(GridCell(row: row, column: bounds.minColumn))
@@ -413,7 +413,7 @@ final class GridInteractionObserver {
             }
         } else if columnDelta < 0 {
             // Shrink from the right only.
-            guard bounds.maxColumn > bounds.minColumn else {
+            guard (bounds.maxColumn - bounds.minColumn + 1) > config.minColumns else {
                 return false
             }
             for row in bounds.minRow...bounds.maxRow {
@@ -494,7 +494,7 @@ final class GridInteractionObserver {
                ) {
                 selectedCells = translatedSelection
             } else {
-                selectedCells = [hoveredCell]
+                selectedCells = config.minimumCellSet(around: hoveredCell)
             }
         } else {
             selectedCells = []
@@ -525,7 +525,7 @@ final class GridInteractionObserver {
 
         var selection = GridSelection()
         selection.startCell = startCell
-        selection.currentCells = startCell.map { [$0] } ?? []
+        selection.currentCells = startCell.map { config.minimumCellSet(around: $0) } ?? []
         selection.boundingFrame = selectionBoundingFrame(
             cells: selection.currentCells,
             configuration: config,
@@ -587,9 +587,9 @@ final class GridInteractionObserver {
         let isClickSelection = dragRect.width < 1 && dragRect.height < 1
         let intersectingCells: Set<GridCell> = if isClickSelection {
             if let startCell = dragSelection?.startCell {
-                [startCell]
+                config.minimumCellSet(around: startCell)
             } else if let hoveredCell = config.cellAt(point: location, in: interactionBounds) {
-                [hoveredCell]
+                config.minimumCellSet(around: hoveredCell)
             } else {
                 []
             }
