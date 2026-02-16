@@ -16,6 +16,8 @@ struct GridConfigurationView: View {
     @Default(.gridColumns) private var gridColumns
     @Default(.gridRows) private var gridRows
     @Default(.gridShowLines) private var gridShowLines
+    @Default(.gridMinColumns) private var gridMinColumns
+    @Default(.gridMinRows) private var gridMinRows
 
     var body: some View {
         LuminareSection(String(localized: "Grid", comment: "Section header shown in settings")) {
@@ -44,6 +46,26 @@ struct GridConfigurationView: View {
                 )
                 .luminareSliderLayout(.compact(textBoxWidth: 48))
 
+                LuminareSlider(
+                    "Min columns",
+                    value: minColumnsBinding,
+                    in: 1...Double(gridColumns),
+                    step: 1,
+                    format: .number.precision(.fractionLength(0...0)),
+                    clampsUpper: false
+                )
+                .luminareSliderLayout(.compact(textBoxWidth: 48))
+
+                LuminareSlider(
+                    "Min rows",
+                    value: minRowsBinding,
+                    in: 1...Double(gridRows),
+                    step: 1,
+                    format: .number.precision(.fractionLength(0...0)),
+                    clampsUpper: false
+                )
+                .luminareSliderLayout(.compact(textBoxWidth: 48))
+
                 GridPreviewView(columns: gridColumns, rows: gridRows, showGridLines: gridShowLines)
                     .padding(.top, 4)
             }
@@ -62,6 +84,9 @@ struct GridConfigurationView: View {
                     max(value, GridConfiguration.minDimension),
                     GridConfiguration.maxDimension
                 )
+                if gridMinColumns > gridColumns {
+                    gridMinColumns = gridColumns
+                }
             }
         )
     }
@@ -75,6 +100,27 @@ struct GridConfigurationView: View {
                     max(value, GridConfiguration.minDimension),
                     GridConfiguration.maxDimension
                 )
+                if gridMinRows > gridRows {
+                    gridMinRows = gridRows
+                }
+            }
+        )
+    }
+
+    private var minColumnsBinding: Binding<Double> {
+        Binding(
+            get: { Double(gridMinColumns) },
+            set: {
+                gridMinColumns = min(max(Int($0.rounded()), 1), gridColumns)
+            }
+        )
+    }
+
+    private var minRowsBinding: Binding<Double> {
+        Binding(
+            get: { Double(gridMinRows) },
+            set: {
+                gridMinRows = min(max(Int($0.rounded()), 1), gridRows)
             }
         )
     }

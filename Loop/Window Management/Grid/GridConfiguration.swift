@@ -16,19 +16,38 @@ struct GridConfiguration: Codable, Hashable {
     var isEnabled: Bool
     var columns: Int
     var rows: Int
+    var minColumns: Int
+    var minRows: Int
 
-    init(isEnabled: Bool, columns: Int, rows: Int) {
+    init(isEnabled: Bool, columns: Int, rows: Int, minColumns: Int = 1, minRows: Int = 1) {
         self.isEnabled = isEnabled
         self.columns = columns.clamped(to: Self.minDimension...Self.maxDimension)
         self.rows = rows.clamped(to: Self.minDimension...Self.maxDimension)
+        self.minColumns = minColumns.clamped(to: 1...self.columns)
+        self.minRows = minRows.clamped(to: 1...self.rows)
     }
 
     static func fromDefaults() -> GridConfiguration {
         GridConfiguration(
             isEnabled: Defaults[.gridModeEnabled],
             columns: Defaults[.gridColumns],
-            rows: Defaults[.gridRows]
+            rows: Defaults[.gridRows],
+            minColumns: Defaults[.gridMinColumns],
+            minRows: Defaults[.gridMinRows]
         )
+    }
+
+    func minimumCellSet(around cell: GridCell) -> Set<GridCell> {
+        let originRow = Swift.min(cell.row, rows - minRows).clamped(to: 0...(rows - 1))
+        let originColumn = Swift.min(cell.column, columns - minColumns).clamped(to: 0...(columns - 1))
+
+        var cells: Set<GridCell> = []
+        for row in originRow..<Swift.min(originRow + minRows, rows) {
+            for column in originColumn..<Swift.min(originColumn + minColumns, columns) {
+                cells.insert(GridCell(row: row, column: column))
+            }
+        }
+        return cells
     }
 
     func calculateCellFrame(row: Int, column: Int, in screen: CGRect) -> CGRect {
