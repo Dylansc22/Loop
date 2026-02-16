@@ -12,6 +12,18 @@ import SwiftUI
 enum WindowRecords {
     private static var recordsByWindowID: [CGWindowID: WindowRecords.Record] = [:]
 
+    private static let debugLog: FileHandle? = {
+        // Reuse /tmp/loop-debug.log (created by LoopManager)
+        return FileHandle(forWritingAtPath: "/tmp/loop-debug.log")
+    }()
+
+    private static func debugPrint(_ msg: String) {
+        guard let fh = debugLog,
+              let data = (msg + "\n").data(using: .utf8) else { return }
+        fh.seekToEndOfFile()
+        fh.write(data)
+    }
+
     struct Record {
         let initialFrame: CGRect
         var actions: [WindowAction]
@@ -30,13 +42,19 @@ enum WindowRecords {
             return
         }
 
+        debugPrint("[records] eraseRecords for window \(window.cgWindowID), had initialFrame=\(recordsByWindowID[window.cgWindowID]!.initialFrame)")
         recordsByWindowID[window.cgWindowID] = nil
         log.success("Erased records for: \(window)")
     }
 
     static func recordFirstIfNeeded(for window: Window) {
-        guard recordsByWindowID[window.cgWindowID] == nil else { return }
-        recordsByWindowID[window.cgWindowID] = Record(initialFrame: window.frame)
+        guard recordsByWindowID[window.cgWindowID] == nil else {
+            debugPrint("[records] recordFirstIfNeeded SKIPPED for \(window.cgWindowID): already exists with initialFrame=\(recordsByWindowID[window.cgWindowID]!.initialFrame)")
+            return
+        }
+        let frame = window.frame
+        debugPrint("[records] recordFirstIfNeeded RECORDING for \(window.cgWindowID): frame=\(frame)")
+        recordsByWindowID[window.cgWindowID] = Record(initialFrame: frame)
         log.info("Recorded first for: \(window)")
     }
 
@@ -96,6 +114,7 @@ enum WindowRecords {
             recordsByWindowID[window.cgWindowID]?.actions.insert(action, at: 0)
         }
 
+        debugPrint("[records] record \(action.direction) for \(window.cgWindowID), actions now=\(recordsByWindowID[window.cgWindowID]?.actions.count ?? 0)")
         log.info("Recorded: \(action) for: \(window)")
     }
 
@@ -104,10 +123,12 @@ enum WindowRecords {
         guard let record = recordsByWindowID[window.cgWindowID],
               record.actions.count > 1
         else {
+            debugPrint("[records] removeLastAction SKIPPED for \(window.cgWindowID): count=\(recordsByWindowID[window.cgWindowID]?.actions.count ?? 0)")
             log.info("Skipped removing last record for: \(window)")
             return
         }
 
+        debugPrint("[records] removeLastAction for \(window.cgWindowID): removing \(record.actions.first?.direction ?? .noAction), count was=\(record.actions.count)")
         recordsByWindowID[window.cgWindowID]?.actions.removeFirst()
 
         log.info("Removed last record for: \(window)")
@@ -121,10 +142,13 @@ enum WindowRecords {
         guard let record = recordsByWindowID[window.cgWindowID],
               record.actions.count >= 2
         else {
+            debugPrint("[records] getLastAction for \(window.cgWindowID): nil (count=\(recordsByWindowID[window.cgWindowID]?.actions.count ?? 0))")
             return nil
         }
 
-        return record.actions[1]
+        let action = record.actions[1]
+        debugPrint("[records] getLastAction for \(window.cgWindowID): \(action.direction) (count=\(record.actions.count))")
+        return action
     }
 
     /// This window's current recorded action
@@ -142,6 +166,8 @@ enum WindowRecords {
     }
 
     static func getInitialFrame(for window: Window) -> CGRect? {
-        recordsByWindowID[window.cgWindowID]?.initialFrame
+        let frame = recordsByWindowID[window.cgWindowID]?.initialFrame
+        debugPrint("[records] getInitialFrame for \(window.cgWindowID): \(String(describing: frame))")
+        return frame
     }
 }

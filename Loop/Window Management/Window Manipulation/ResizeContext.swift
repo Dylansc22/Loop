@@ -5,6 +5,7 @@
 //  Created by Kai Azim on 2026-01-19.
 //
 
+import Foundation
 import Scribe
 import SwiftUI
 

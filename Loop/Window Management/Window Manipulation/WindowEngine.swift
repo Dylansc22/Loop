@@ -13,6 +13,17 @@ import SwiftUI
 /// Use `WindowActionEngine.apply()` as the main entry point for executing window actions.
 @Loggable(style: .static)
 enum WindowEngine {
+    private static let debugLog: FileHandle? = {
+        return FileHandle(forWritingAtPath: "/tmp/loop-debug.log")
+    }()
+
+    private static func debugPrint(_ msg: String) {
+        guard let fh = debugLog,
+              let data = (msg + "\n").data(using: .utf8) else { return }
+        fh.seekToEndOfFile()
+        fh.write(data)
+    }
+
     /// Performs the actual resize operation on a window.
     /// This is an internal method - callers should use `WindowActionEngine.apply()` instead.
     static func performResize(context: ResizeContext) async throws -> CGRect? {
@@ -30,6 +41,7 @@ enum WindowEngine {
 
         let willChangeScreens = ScreenUtility.screenContaining(window) != context.screen
         let targetFrame = context.getTargetFrame().padded
+        debugPrint("[engine] performResize action=\(context.action.direction) window=\(window.cgWindowID) targetFrame=\(targetFrame) currentFrame=\(window.frame)")
         log.info("Resizing \(window) to \(targetFrame)")
 
         // Record first frame if needed
