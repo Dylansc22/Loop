@@ -39,6 +39,8 @@ extension WindowAction {
             .systemImage("questionmark")
         case .undo:
             .systemImage("arrow.uturn.backward")
+        case .toggleAlmostMaximize:
+            .systemImage("arrow.up.left.and.down.right.and.arrow.up.right.and.down.left")
         case .initialFrame:
             .systemImage("backward.end.fill")
         case .hide:

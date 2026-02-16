@@ -519,6 +519,28 @@ extension LoopManager {
         disableHapticFeedback: Bool = false,
         canAdvanceCycle: Bool = true
     ) async {
+        var newAction = newAction
+        // Resolve toggleAlmostMaximize before the guard so the resolved
+        // action (.almostMaximize/.undo) has a different ID, letting
+        // re-triggers pass the same-action guard naturally.
+        if newAction.direction == .toggleAlmostMaximize {
+            if resizeContext.action.direction == .almostMaximize {
+                newAction = .init(.undo)
+            } else if resizeContext.action.direction == .undo {
+                if let window = resizeContext.window {
+                    WindowRecords.eraseRecords(for: window)
+                }
+                newAction = .init(.almostMaximize)
+            } else if let window = resizeContext.window {
+                if WindowRecords.getCurrentAction(for: window)?.direction == .almostMaximize {
+                    newAction = .init(.undo)
+                } else {
+                    WindowRecords.eraseRecords(for: window)
+                    newAction = .init(.almostMaximize)
+                }
+            }
+        }
+
         guard
             isLoopActive,
             resizeContext.action.id != newAction.id || newAction.canRepeat,
@@ -530,7 +552,6 @@ extension LoopManager {
             return
         }
 
-        var newAction: WindowAction = newAction
         var newParentAction: WindowAction? = nil
 
         triggerKeyTimeoutTimer.cancel()
