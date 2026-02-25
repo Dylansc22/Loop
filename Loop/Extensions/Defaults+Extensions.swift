@@ -66,6 +66,12 @@ extension Defaults.Keys {
     static let gridMinColumns = Key<Int>("gridMinColumns", default: 1, iCloud: true)
     static let gridMinRows = Key<Int>("gridMinRows", default: 1, iCloud: true)
 
+    // Custom Position (used by toggleCustomPosition)
+    static let customPositionRow = Key<Int>("customPositionRow", default: 0, iCloud: true)
+    static let customPositionColumn = Key<Int>("customPositionColumn", default: 0, iCloud: true)
+    static let customPositionGridColumns = Key<Int>("customPositionGridColumns", default: 3, iCloud: true)
+    static let customPositionGridRows = Key<Int>("customPositionGridRows", default: 3, iCloud: true)
+
     // Keybinds
     static let triggerKey = Key<Set<CGKeyCode>>("trigger", default: [.kVK_Function], iCloud: true)
     static let sideDependentTriggerKey = Key<Bool>("sideDependentTriggerKey", default: true, iCloud: true)

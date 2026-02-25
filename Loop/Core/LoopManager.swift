@@ -15,23 +15,10 @@ final class LoopManager {
     static let shared = LoopManager()
     private init() {}
 
-    private static let debugLog: FileHandle? = {
-        let path = "/tmp/loop-debug.log"
-        FileManager.default.createFile(atPath: path, contents: nil)
-        return FileHandle(forWritingAtPath: path)
-    }()
-
-    private func debugPrint(_ msg: String) {
-        guard let fh = Self.debugLog,
-              let data = (msg + "\n").data(using: .utf8) else { return }
-        fh.seekToEndOfFile()
-        fh.write(data)
-    }
-
     /// Context for the current resize operation, tracking frame and edge adjustment state.
     /// Initialized when Loop opens with a target window and screen.
     private(set) var resizeContext: ResizeContext = .init()
-    private var preToggleAction: WindowAction?
+    private var preToggleActions: [WindowDirection: WindowAction] = [:]
     private var triggerActionID: UUID?
 
     private let windowActionCache = WindowActionCache()
@@ -141,6 +128,17 @@ final class LoopManager {
                     middleClickTrigger.stop()
                 }
             }
+        }
+
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didTerminateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { notification in
+            guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else {
+                return
+            }
+            WindowRecords.removeRecords(forTerminatedPID: app.processIdentifier)
         }
     }
 }
@@ -459,6 +457,7 @@ extension LoopManager {
 
         indicatorService.closeAll()
         isLoopActive = false
+        preToggleActions.removeAll()
 
         triggerKeyTimeoutTimer.cancel()
         mouseInteractionObserver.stop()
@@ -559,44 +558,32 @@ extension LoopManager {
         canAdvanceCycle: Bool = true
     ) async {
         var newAction = newAction
-        // Resolve toggleAlmostMaximize before the guard so the resolved
-        // action (.almostMaximize/.undo) has a different ID, letting
-        // re-triggers pass the same-action guard naturally.
-        if newAction.direction == .toggleAlmostMaximize {
-            debugPrint("[toggle] entry — currentAction=\(resizeContext.action.direction)")
-            if resizeContext.action.direction == .almostMaximize {
-                debugPrint("[toggle] branch1: in-session almostMaximize → undo (preToggle=\(String(describing: preToggleAction?.direction)))")
-                newAction = preToggleAction ?? .init(.undo)
-                preToggleAction = nil
-            } else if resizeContext.action.direction == .undo {
-                if let window = resizeContext.window {
-                    WindowRecords.eraseRecords(for: window)
-                }
-                debugPrint("[toggle] branch2: in-session undo → almostMaximize")
-                newAction = .init(.almostMaximize)
-            } else if let window = resizeContext.window {
-                let bounds = resizeContext.paddedBounds
-                let tolerance: CGFloat = 50
-                let recordDir = WindowRecords.getCurrentAction(for: window)?.direction
-                let widthDelta = abs(window.frame.width - bounds.width * 0.9)
-                let heightDelta = abs(window.frame.height - bounds.height * 0.9)
-                let isAtAlmostMaximize =
-                    recordDir == .almostMaximize
-                    && widthDelta < tolerance
-                    && heightDelta < tolerance
+        // Resolve toggle directions before the guard so the resolved
+        // action (.almostMaximize/.customPosition/.undo) has a different ID,
+        // letting re-triggers pass the same-action guard naturally.
+        if newAction.direction == .toggleCustomPosition {
+            let cpRow = Defaults[.customPositionRow]
+            let cpCol = Defaults[.customPositionColumn]
+            let cpGridCols = Defaults[.customPositionGridColumns]
+            let cpGridRows = Defaults[.customPositionGridRows]
 
-                debugPrint("[toggle] branch3: record=\(String(describing: recordDir)) frame=\(window.frame) bounds=\(bounds) wΔ=\(widthDelta) hΔ=\(heightDelta) isAt=\(isAtAlmostMaximize)")
-
-                if isAtAlmostMaximize {
-                    debugPrint("[toggle] branch3: records match + size matches → undo")
-                    newAction = .init(.undo)
-                } else {
-                    debugPrint("[toggle] branch3: stale/no records → erase + almostMaximize (saving preToggle=\(resizeContext.action.direction))")
-                    preToggleAction = resizeContext.action
-                    WindowRecords.eraseRecords(for: window)
-                    newAction = .init(.almostMaximize)
-                }
+            if cpGridCols <= 0 || cpGridRows <= 0 || cpRow >= cpGridRows || cpCol >= cpGridCols {
+                DebugLogger.log("[toggleCustom] invalid config: row=\(cpRow) col=\(cpCol) gridRows=\(cpGridRows) gridCols=\(cpGridCols)")
+                newAction = .init(.noAction)
+            } else {
+                let expectedWidth = resizeContext.paddedBounds.width / CGFloat(cpGridCols)
+                let expectedHeight = resizeContext.paddedBounds.height / CGFloat(cpGridRows)
+                newAction = resolveToggleAction(
+                    target: .customPosition,
+                    expectedSize: CGSize(width: expectedWidth, height: expectedHeight)
+                )
             }
+        } else if newAction.direction == .toggleAlmostMaximize {
+            let bounds = resizeContext.paddedBounds
+            newAction = resolveToggleAction(
+                target: .almostMaximize,
+                expectedSize: CGSize(width: bounds.width * 0.9, height: bounds.height * 0.9)
+            )
         }
 
         guard
@@ -827,6 +814,58 @@ extension LoopManager {
         }
 
         return currentCycle[nextIndex]
+    }
+
+    /// Resolves a toggle action (almostMaximize or customPosition) into the
+    /// concrete direction to apply. Handles three cases:
+    /// 1. In-session: already at target → undo (restore pre-toggle action)
+    /// 2. In-session: at undo → re-apply target
+    /// 3. Fresh session: compare window frame against expected size via records
+    private func resolveToggleAction(
+        target: WindowDirection,
+        expectedSize: CGSize
+    ) -> WindowAction {
+        let label = "[toggle:\(target)]"
+        let currentDir = resizeContext.action.direction
+        DebugLogger.log("\(label) entry — currentAction=\(currentDir)")
+
+        // Branch 1: in-session, already at target → undo
+        if currentDir == target {
+            let saved = preToggleActions[target]
+            DebugLogger.log("\(label) branch1: at target → undo (preToggle=\(String(describing: saved?.direction)))")
+            preToggleActions[target] = nil
+            return saved ?? .init(.undo)
+        }
+
+        // Branch 2: in-session, at undo → re-apply target
+        if currentDir == .undo {
+            if let window = resizeContext.window {
+                WindowRecords.eraseRecords(for: window)
+            }
+            DebugLogger.log("\(label) branch2: at undo → \(target)")
+            return .init(target)
+        }
+
+        // Branch 3: fresh session — check records + frame size
+        guard let window = resizeContext.window else {
+            return .init(target)
+        }
+
+        let tolerance: CGFloat = 50
+        let recordDir = WindowRecords.getCurrentAction(for: window)?.direction
+        let widthDelta = abs(window.frame.width - expectedSize.width)
+        let heightDelta = abs(window.frame.height - expectedSize.height)
+        let isAlreadyAtTarget = recordDir == target && widthDelta < tolerance && heightDelta < tolerance
+
+        DebugLogger.log("\(label) branch3: record=\(String(describing: recordDir)) wΔ=\(widthDelta) hΔ=\(heightDelta) isAt=\(isAlreadyAtTarget)")
+
+        if isAlreadyAtTarget {
+            return .init(.undo)
+        }
+
+        preToggleActions[target] = resizeContext.action
+        WindowRecords.eraseRecords(for: window)
+        return .init(target)
     }
 
     private func performHapticFeedback() {

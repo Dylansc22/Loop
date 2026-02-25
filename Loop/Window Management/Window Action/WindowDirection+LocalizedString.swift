@@ -169,6 +169,10 @@ extension WindowDirection {
             String(localized: "Custom", comment: "Window action")
         case .toggleAlmostMaximize:
             String(localized: "Toggle Almost Maximize", comment: "Window action")
+        case .customPosition:
+            String(localized: "Custom Position", comment: "Window action")
+        case .toggleCustomPosition:
+            String(localized: "Toggle Custom Position", comment: "Window action")
         case .cycle:
             String(localized: "Cycle", comment: "Window action")
         }
